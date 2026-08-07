@@ -1,0 +1,142 @@
+/* Phase 1 baseline only. Phase 5 replaces this with Tailwind + shadcn/ui. */
+
+:root {
+  --bg: #0a0a0f;
+  --panel: #14141c;
+  --border: #26263a;
+  --text: #e8e8f0;
+  --muted: #8b8ba7;
+  --accent: #7c5cff;
+  --ok: #3ddc97;
+  --bad: #ff5c7a;
+  --warn: #ffb057;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+main {
+  max-width: 46rem;
+  margin: 0 auto;
+  padding: 4rem 1.5rem;
+}
+
+.brand {
+  font-size: 2.5rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  margin: 0 0 0.5rem;
+}
+
+.tagline {
+  color: var(--muted);
+  font-size: 1.05rem;
+  line-height: 1.6;
+  margin: 0 0 2.5rem;
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.panel h2 {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  margin: 0 0 1rem;
+  font-weight: 600;
+}
+
+.field {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.field input {
+  flex: 1;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  color: var(--text);
+  font-size: 0.95rem;
+  font-family: inherit;
+}
+
+.field input:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.field button {
+  background: var(--accent);
+  border: 0;
+  border-radius: 8px;
+  padding: 0.75rem 1.5rem;
+  color: white;
+  font-size: 0.95rem;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.field button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.hint {
+  color: var(--muted);
+  font-size: 0.85rem;
+  margin: 0.75rem 0 0;
+}
+
+.checks { display: grid; gap: 0.5rem; }
+
+.check {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  font-size: 0.9rem;
+}
+
+.check .name {
+  width: 5rem;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.check .value {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 0.85rem;
+  word-break: break-word;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  align-self: center;
+}
+
+.dot.ok { background: var(--ok); }
+.dot.bad { background: var(--bad); }
+
+.value.ok { color: var(--ok); }
+.value.bad { color: var(--bad); }
+
+footer {
+  color: var(--muted);
+  font-size: 0.8rem;
+  margin-top: 3rem;
+  border-top: 1px solid var(--border);
+  padding-top: 1.5rem;
+}

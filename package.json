@@ -1,7 +1,10 @@
 {
   "name": "vibeguard",
   "private": true,
-  "workspaces": ["packages/*", "apps/*"],
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
   "scripts": {
     "build": "npm run build -w @vibeguard/core && npm run build -w @vibeguard/api && npm run build -w @vibeguard/worker && npm run build -w @vibeguard/web",
     "test": "npm run test -w @vibeguard/core"
