@@ -1,8 +1,16 @@
-# Paste into: Zerops dashboard -> Import project.
+# Paste into: Zerops dashboard -> Import project, or run:
+#   zcli project project-import zerops-project-import.yml
+#
 # Creates only the three managed services. The code services (api / web / worker)
 # are added afterwards and pointed at this repo's zerops.yaml.
 #
-# Everything here stays private — no service in this file gets a public surface.
+# Everything here stays private — no service in this file sets enableSubdomainAccess.
+#
+# Service type syntax: the per-service docs advertise `postgresql:single@16` and
+# call the standalone `mode` field deprecated, but the import reference still
+# documents `mode` and Zerops' own current recipes (recipe-deno, recipe-payload)
+# use `postgresql@16` + `mode: NON_HA` verbatim. Staying on the form that is
+# demonstrably deploying today.
 project:
   name: vibeguard
 
@@ -10,11 +18,24 @@ services:
   - hostname: db
     type: postgresql@16
     mode: NON_HA
+    # Default would be oltp-staging. A 48-hour demo does not need that headroom,
+    # and the profile is changeable in the GUI at any time.
+    profile: oltp-hobby
+    priority: 1
 
   - hostname: valkey
     type: valkey@7.2
     mode: NON_HA
+    profile: hobby
+    priority: 1
 
   - hostname: storage
     type: object-storage
     objectStorageSize: 2
+    # Must be private. This bucket holds raw scan reports — the secrets and
+    # vulnerable code paths VibeGuard just found in someone else's repository.
+    # Anonymous read access would turn the security product into a disclosure
+    # channel. The api and worker authenticate with the generated S3 credentials,
+    # so nothing needs public access.
+    objectStoragePolicy: private
+    priority: 1

@@ -148,6 +148,21 @@ three high-severity advisories, and root `overrides` did not re-resolve them. Si
 whole pitch is flagging dependency CVEs, shipping with three of its own was not defensible —
 judges will point VibeGuard at VibeGuard. `npm audit` is clean at Next 16.3.0.
 
+**The report bucket is explicitly `private`.**
+Object storage holds raw scan reports: the hardcoded keys, injectable queries and vulnerable
+dependencies VibeGuard just found in someone else's repository. A bucket that allowed anonymous
+reads would turn a security product into a disclosure channel — the single worst failure mode this
+project has. `objectStoragePolicy: private` is therefore stated explicitly rather than left to a
+platform default, and the api and worker authenticate with the generated S3 credentials. Nothing in
+the system needs public object access.
+
+**Service types stay on `postgresql@16` + `mode: NON_HA`, against the docs' advice.**
+Zerops' per-service pages present `postgresql:{single|ha}@{version}` and describe the standalone
+`mode` field as deprecated. But the import reference still documents `mode` with no deprecation
+notice, and Zerops' own maintained recipes (`recipe-deno`, `recipe-payload`) use the older form
+verbatim today. When first-party docs contradict each other, the code that is actually deploying
+wins. Revisit if an import ever fails on it.
+
 **Config errors surface as degraded health, never as a failed boot.** `env.ts` collects missing
 variables instead of throwing, and a failed migration is logged and stepped over rather than
 aborting startup. A crash-looping service shows a dead URL and explains nothing; a live service

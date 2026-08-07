@@ -63,6 +63,11 @@ zerops:
         - apps/web/public
         - apps/web/next.config.js
         - apps/web/package.json
+        # apps/web does not import @vibeguard/core yet, but node_modules ships a
+        # symlink to it either way. Without these two the symlink dangles, and it
+        # detonates the moment a component imports a shared type (Phase 5).
+        - packages/core/dist
+        - packages/core/package.json
         - package.json
         - node_modules
       cache: node_modules
