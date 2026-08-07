@@ -1,0 +1,20 @@
+# Paste into: Zerops dashboard -> Import project.
+# Creates only the three managed services. The code services (api / web / worker)
+# are added afterwards and pointed at this repo's zerops.yaml.
+#
+# Everything here stays private — no service in this file gets a public surface.
+project:
+  name: vibeguard
+
+services:
+  - hostname: db
+    type: postgresql@16
+    mode: NON_HA
+
+  - hostname: valkey
+    type: valkey@7.2
+    mode: NON_HA
+
+  - hostname: storage
+    type: object-storage
+    objectStorageSize: 2

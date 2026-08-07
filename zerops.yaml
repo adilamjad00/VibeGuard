@@ -1,0 +1,136 @@
+# VibeGuard — build/deploy/run for the three code services.
+#
+# Cross-service variables use ${<hostname>_<variableName>}, where the hostnames
+# are the ones created by zerops-project-import.yml: db / valkey / storage.
+#
+# deployFiles note: with npm workspaces, node_modules/@vibeguard/core is a
+# symlink into packages/core. Both packages/core/dist AND packages/core/package.json
+# have to ship or that symlink dangles and the service dies on its first import.
+
+zerops:
+  # ─────────────────────────── API (public) ───────────────────────────
+  - setup: api
+    build:
+      base: nodejs@22
+      buildCommands:
+        - npm ci
+        - npm run build -w @vibeguard/core
+        - npm run build -w @vibeguard/api
+      deployFiles:
+        - apps/api/dist
+        - apps/api/package.json
+        - packages/core/dist
+        - packages/core/package.json
+        - package.json
+        - node_modules
+      cache: node_modules
+    run:
+      base: nodejs@22
+      ports:
+        - port: 3001
+          httpSupport: true
+      envVariables:
+        NODE_ENV: production
+        PORT: "3001"
+        DATABASE_URL: ${db_connectionString}
+        VALKEY_HOST: ${valkey_hostname}
+        VALKEY_PORT: ${valkey_port}
+        VALKEY_PASSWORD: ${valkey_password}
+        S3_ENDPOINT: ${storage_apiUrl}
+        S3_ACCESS_KEY: ${storage_accessKeyId}
+        S3_SECRET_KEY: ${storage_secretAccessKey}
+        S3_BUCKET: ${storage_bucketName}
+      start: node apps/api/dist/index.js
+      # Liveness, not readiness — deliberately NOT /healthz. /healthz answers 503
+      # whenever a dependency is degraded, so pointing Zerops at it would restart
+      # the container every time Postgres blinked and turn a recoverable blip into
+      # a crash loop with an unreachable URL. `/` answers 200 whenever the process
+      # is alive, which is exactly the question a restart policy should ask.
+      healthCheck:
+        httpGet:
+          port: 3001
+          path: /
+
+  # ─────────────────────────── WEB (public) ───────────────────────────
+  - setup: web
+    build:
+      base: nodejs@22
+      buildCommands:
+        - npm ci
+        - npm run build -w @vibeguard/web
+      deployFiles:
+        - apps/web/.next
+        - apps/web/public
+        - apps/web/next.config.js
+        - apps/web/package.json
+        - package.json
+        - node_modules
+      cache: node_modules
+      envVariables:
+        # Must be a BUILD variable: Next freezes rewrite destinations into the
+        # routes manifest at build time, so setting it only at run time is
+        # silently ignored. Points at the api service on the private network.
+        API_INTERNAL_URL: http://api:3001
+    run:
+      base: nodejs@22
+      ports:
+        - port: 3000
+          httpSupport: true
+      envVariables:
+        NODE_ENV: production
+        PORT: "3000"
+        # Read at request time by the server component health probe.
+        API_INTERNAL_URL: http://api:3001
+      start: npm run start -w @vibeguard/web
+
+  # ────────────────────── WORKER (private, no ports) ──────────────────────
+  - setup: worker
+    build:
+      # Ubuntu here too: node_modules built on Alpine/musl would be deployed
+      # into a glibc runtime, and any prebuilt native binary would not load.
+      os: ubuntu
+      base: nodejs@22
+      buildCommands:
+        - npm ci
+        - npm run build -w @vibeguard/core
+        - npm run build -w @vibeguard/worker
+      deployFiles:
+        - apps/worker/dist
+        - apps/worker/package.json
+        - packages/core/dist
+        - packages/core/package.json
+        - package.json
+        - node_modules
+      cache: node_modules
+    run:
+      # Ubuntu, not Alpine: semgrep ships a compiled semgrep-core linked against
+      # glibc and will not run on musl. gitleaks and osv-scanner are static Go
+      # binaries and are indifferent.
+      os: ubuntu
+      base: nodejs@22
+      # Zerops builds this image once and caches it, keyed on these commands —
+      # redeploys skip the whole install.
+      prepareCommands:
+        - sudo apt-get update
+        - sudo apt-get install -y --no-install-recommends git curl ca-certificates python3 python3-venv
+        # Ubuntu 24.04 marks the system Python as externally managed (PEP 668),
+        # so a bare `pip install` is refused. A venv sidesteps it cleanly.
+        - sudo python3 -m venv /opt/semgrep
+        - sudo /opt/semgrep/bin/pip install --no-cache-dir semgrep
+        - sudo ln -sf /opt/semgrep/bin/semgrep /usr/local/bin/semgrep
+        - curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz | sudo tar -xz -C /usr/local/bin gitleaks
+        - sudo curl -sSfL -o /usr/local/bin/osv-scanner https://github.com/google/osv-scanner/releases/download/v2.5.0/osv-scanner_linux_amd64
+        - sudo chmod +x /usr/local/bin/osv-scanner
+      envVariables:
+        NODE_ENV: production
+        DATABASE_URL: ${db_connectionString}
+        VALKEY_HOST: ${valkey_hostname}
+        VALKEY_PORT: ${valkey_port}
+        VALKEY_PASSWORD: ${valkey_password}
+        S3_ENDPOINT: ${storage_apiUrl}
+        S3_ACCESS_KEY: ${storage_accessKeyId}
+        S3_SECRET_KEY: ${storage_secretAccessKey}
+        S3_BUCKET: ${storage_bucketName}
+        # LLM_API_KEY is set as a secret env var on the worker service in the
+        # Zerops GUI (Phase 3). Never committed.
+      start: node apps/worker/dist/index.js

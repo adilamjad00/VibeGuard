@@ -121,3 +121,36 @@ osv-scanner must not stop the worker from running the other two.
 With npm workspaces, `node_modules/@vibeguard/core` is a *symlink* into `packages/core`. Deploying
 only `packages/core/dist` leaves that symlink dangling at runtime, and the service crashes on its
 first `import`. Both paths ship together.
+
+**The browser talks to the API same-origin, not cross-origin.**
+`web` proxies `/api/*` to `http://api:3001` over the private network via a Next rewrite. This
+removes the CORS surface entirely and means the frontend build never has to know a public hostname
+that only exists after the API's subdomain is switched on. Phase 4's SSE stream reuses the path.
+`api` still gets its own public subdomain so `/healthz` is directly demonstrable.
+
+**Zerops' `healthCheck` points at `/`, deliberately not at `/healthz`.**
+These answer different questions. `/healthz` is a *readiness* report and returns 503 whenever any
+dependency is degraded; wiring a restart policy to it means a brief Postgres blip restarts the
+container, which restarts it again, turning a recoverable blip into a crash loop and an unreachable
+URL. `/` is *liveness* — 200 whenever the process is alive — which is the only question a restart
+policy should be asking. Keeping the two separate is what lets `/healthz` be brutally honest.
+
+### Found during the build, not planned
+
+**Next resolves rewrite destinations at build time.** `rewrites()` is baked into the routes
+manifest; re-running `next.config.js` on `next start` does not change it. `API_INTERNAL_URL` is
+therefore a **build** variable in `zerops.yaml`, not just a run one. Setting it only at runtime
+fails silently — the app starts, looks fine, and proxies to the wrong host. Caught by testing the
+proxy locally rather than by reading the config.
+
+**Upgraded to Next 16.** Next 15 pulls `postcss` and `sharp` transitively at versions carrying
+three high-severity advisories, and root `overrides` did not re-resolve them. Since VibeGuard's
+whole pitch is flagging dependency CVEs, shipping with three of its own was not defensible —
+judges will point VibeGuard at VibeGuard. `npm audit` is clean at Next 16.3.0.
+
+**Config errors surface as degraded health, never as a failed boot.** `env.ts` collects missing
+variables instead of throwing, and a failed migration is logged and stepped over rather than
+aborting startup. A crash-looping service shows a dead URL and explains nothing; a live service
+answering `503 {"db":"error: DATABASE_URL is not set"}` is diagnosable in a single request. This is
+a deliberate trade for an unattended deploy — it is not a licence to ignore errors, and no request
+path swallows failures.
