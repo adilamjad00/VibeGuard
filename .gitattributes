@@ -1,0 +1,2 @@
+# Everything deploys to Linux containers — keep LF in the repo and on checkout.
+* text=auto eol=lf
