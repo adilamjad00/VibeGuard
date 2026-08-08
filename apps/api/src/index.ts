@@ -8,7 +8,9 @@ import { closePool } from "./db.js";
 import { closeValkey, getValkey } from "./valkey.js";
 import { scanRoutes } from "./routes/scans.js";
 import { streamRoutes } from "./routes/stream.js";
+import { wsRoutes } from "./routes/ws.js";
 import { closePubsub } from "./pubsub.js";
+import websocket from "@fastify/websocket";
 
 const app = Fastify({
   logger: { level: process.env.LOG_LEVEL ?? "info" },
@@ -42,8 +44,11 @@ await app.register(rateLimit, {
   skipOnError: true,
 });
 
+await app.register(websocket);
+
 await app.register(scanRoutes);
 await app.register(streamRoutes);
+await app.register(wsRoutes);
 
 /**
  * Reports each dependency independently and answers 503 unless all three are

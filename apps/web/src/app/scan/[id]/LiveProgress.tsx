@@ -13,11 +13,11 @@ const PHASES = [
 const TERMINAL = new Set(["done", "failed"]);
 
 /**
- * How long to wait for the first event before assuming the stream is being
- * buffered somewhere and falling back to polling. Replayed history arrives
- * immediately on connect, so a healthy stream always beats this comfortably.
+ * How long to wait for the first frame before falling back to polling. Replayed
+ * history arrives immediately on connect, so a healthy socket always beats this.
  */
 const STALL_TIMEOUT_MS = 4000;
+const POLL_INTERVAL_MS = 3000;
 
 interface Event {
   phase: string;
@@ -25,12 +25,19 @@ interface Event {
 }
 
 /**
- * Live scan progress over SSE, with a polling fallback.
+ * Live scan progress over a WebSocket, falling back to polling.
  *
- * The fallback is not belt-and-braces: SSE dies quietly behind a buffering
- * proxy, and a progress page that silently stops updating is worse than one
- * that never claimed to be live. If the stream errors or stalls, this reverts
- * to the Phase 3 behaviour — re-checking the report until it is ready.
+ * WebSocket rather than SSE, for a measured reason: Zerops' shared L7 balancer
+ * has `proxy_buffering on` and it is not configurable for a *.zerops.app
+ * subdomain (the routing entries are `isEditable: false` and the platform API
+ * exposes no buffering setting at any scope). That holds an SSE response until
+ * the stream ends — measured at 40–66s, i.e. the entire scan. An upgraded
+ * WebSocket is a tunnel rather than a buffered response body, so it is not
+ * subject to that setting. Measured over the same scan: frames at +16.7s,
+ * +17.3s, +32.9s, +41.5s instead of all at once on close.
+ *
+ * The SSE endpoint still exists and is still correct; it is simply the wrong
+ * transport for this particular proxy.
  */
 export function LiveProgress({ scanId, initialStatus }: { scanId: string; initialStatus: string }) {
   const router = useRouter();
@@ -41,16 +48,14 @@ export function LiveProgress({ scanId, initialStatus }: { scanId: string; initia
 
   useEffect(() => {
     // router.refresh() re-runs the server component, which then renders the
-    // finished report instead of this component.
+    // finished report in place of this component.
     const complete = () => {
       if (finished.current) return;
       finished.current = true;
       router.refresh();
     };
 
-    const source = new EventSource(`/api/scans/${scanId}/stream`);
     let poll: ReturnType<typeof setInterval> | undefined;
-
     const startPolling = () => {
       if (poll) return;
       poll = setInterval(async () => {
@@ -64,48 +69,51 @@ export function LiveProgress({ scanId, initialStatus }: { scanId: string; initia
             complete();
           }
         } catch {
-          // Keep polling; a transient network error is not a reason to give up.
+          // Transient network errors are not a reason to stop polling.
         }
-      }, 3000);
+      }, POLL_INTERVAL_MS);
     };
 
-    // A buffering reverse proxy does not error — it accepts the connection and
-    // holds every byte until the response ends, so `onerror` never fires and
-    // the page would sit frozen on "Cloning" until the scan finished. Measured
-    // on this deployment: nginx held the whole stream for 66s. So silence is
-    // treated as failure too, and polling starts if nothing arrives promptly.
+    // A buffering proxy does not raise an error — it accepts the connection and
+    // goes silent — so silence has to be treated as failure too. Without this
+    // the page would sit frozen on "Cloning" until the scan finished.
     const stall = setTimeout(startPolling, STALL_TIMEOUT_MS);
 
-    source.onopen = () => setLive(true);
+    const scheme = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const socket = new WebSocket(`${scheme}//${window.location.host}/api/scans/${scanId}/ws`);
 
-    source.onmessage = (message) => {
+    socket.onopen = () => setLive(true);
+
+    socket.onmessage = (message) => {
       clearTimeout(stall);
       setLive(true);
       let event: Event;
       try {
-        event = JSON.parse(message.data) as Event;
+        event = JSON.parse(message.data as string) as Event;
       } catch {
         return;
       }
       setPhase(event.phase);
       setLog((entries) => [...entries, event]);
       if (TERMINAL.has(event.phase)) {
-        source.close();
+        socket.close();
         complete();
       }
     };
 
-    source.onerror = () => {
-      // EventSource retries on its own, but if the connection never establishes
-      // the user would sit on a dead page — so polling takes over regardless.
+    const degrade = () => {
       setLive(false);
-      startPolling();
+      // If the socket closed before a terminal event, the scan is still running
+      // and something ate the connection — poll instead of stranding the user.
+      if (!finished.current) startPolling();
     };
+    socket.onerror = degrade;
+    socket.onclose = degrade;
 
     return () => {
       clearTimeout(stall);
-      source.close();
       if (poll) clearInterval(poll);
+      socket.close();
     };
   }, [scanId, router]);
 
