@@ -4,6 +4,7 @@ import { getPool } from "../db.js";
 import { enqueueScan } from "../queue.js";
 import { validateRepoUrl } from "../repo-url.js";
 import { presignReport, REPORT_URL_TTL_SECONDS } from "../s3.js";
+import { isUuid } from "../uuid.js";
 
 interface ScanRow {
   id: string;
@@ -153,7 +154,3 @@ function toFinding(row: Record<string, unknown>): NormalizedFinding {
   };
 }
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-function isUuid(value: string): boolean {
-  return UUID.test(value);
-}

@@ -7,6 +7,8 @@ import { healthReport } from "./health.js";
 import { closePool } from "./db.js";
 import { closeValkey, getValkey } from "./valkey.js";
 import { scanRoutes } from "./routes/scans.js";
+import { streamRoutes } from "./routes/stream.js";
+import { closePubsub } from "./pubsub.js";
 
 const app = Fastify({
   logger: { level: process.env.LOG_LEVEL ?? "info" },
@@ -41,6 +43,7 @@ await app.register(rateLimit, {
 });
 
 await app.register(scanRoutes);
+await app.register(streamRoutes);
 
 /**
  * Reports each dependency independently and answers 503 unless all three are
@@ -62,7 +65,7 @@ async function shutdown(signal: string) {
   app.log.info({ signal }, "shutting down");
   try {
     await app.close();
-    await Promise.allSettled([closePool(), closeValkey()]);
+    await Promise.allSettled([closePool(), closeValkey(), closePubsub()]);
   } finally {
     process.exit(0);
   }

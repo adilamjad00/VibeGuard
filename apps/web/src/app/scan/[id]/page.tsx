@@ -1,17 +1,11 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { fetchScan, type Finding, type Scan } from "@/lib/api";
+import { LiveProgress } from "./LiveProgress";
 
 export const dynamic = "force-dynamic";
 
 const IN_PROGRESS = new Set(["queued", "cloning", "scanning", "analyzing"]);
-
-const PHASE_LABEL: Record<string, string> = {
-  queued: "Queued",
-  cloning: "Cloning",
-  scanning: "Scanning",
-  analyzing: "Analyzing",
-};
 
 export default async function ScanPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -46,26 +40,17 @@ export default async function ScanPage({ params }: { params: Promise<{ id: strin
   }
 
   if (IN_PROGRESS.has(scan.status)) {
-    // Phase 4 replaces this poll with a live SSE stream.
+    // Rendered on the server so the page is never blank, then handed to a
+    // client component that streams live phases over SSE.
     return (
       <main>
-        <meta httpEquiv="refresh" content="3" />
         <Back />
-        <h1 className="brand">{PHASE_LABEL[scan.status] ?? "Working"}…</h1>
+        <h1 className="brand">Scanning…</h1>
         <p className="tagline">
-          Scanning <code>{scan.repoUrl}</code>. This page refreshes automatically.
+          Reading <code>{scan.repoUrl}</code> as text in a disposable sandbox. Nothing in it is
+          executed.
         </p>
-        <div className="panel">
-          <h2>Progress</h2>
-          <div className="checks">
-            {["cloning", "scanning", "analyzing"].map((phase) => (
-              <div className="check" key={phase}>
-                <span className={`dot ${reached(scan!.status, phase) ? "ok" : ""}`} />
-                <span className="name">{PHASE_LABEL[phase]}</span>
-              </div>
-            ))}
-          </div>
-        </div>
+        <LiveProgress scanId={scan.id} initialStatus={scan.status} />
       </main>
     );
   }
@@ -163,7 +148,3 @@ function Back() {
   );
 }
 
-function reached(status: string, phase: string): boolean {
-  const order = ["queued", "cloning", "scanning", "analyzing", "done"];
-  return order.indexOf(status) >= order.indexOf(phase);
-}

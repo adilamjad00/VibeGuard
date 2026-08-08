@@ -278,6 +278,34 @@ code {
   border-radius: 4px;
 }
 
+/* ---------- live progress ---------- */
+
+.live-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ok);
+  margin-left: 0.4rem;
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
+}
+
+/* Respect users who have asked the OS for less motion. */
+@media (prefers-reduced-motion: reduce) {
+  .live-dot { animation: none; }
+}
+
+.checks ol, ol.checks { list-style: none; margin: 0; padding: 0; }
+
+.phase-active { color: var(--text); font-weight: 600; }
+.phase-done { color: var(--ok); }
+.phase-pending { color: var(--muted); }
+
 .warn-panel {
   border-color: var(--warn);
   background: #241c10;

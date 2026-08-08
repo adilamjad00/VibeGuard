@@ -3,6 +3,7 @@ import { checkScannerTools } from "./toolcheck.js";
 import { runScan, type ScanJob } from "./pipeline.js";
 import { isLlmConfigured } from "./llm.js";
 import { closePool } from "./db.js";
+import { closePublisher } from "./pubsub.js";
 
 const connection = {
   host: process.env.VALKEY_HOST!,
@@ -43,7 +44,7 @@ async function shutdown(signal: string) {
   console.log(`[worker] ${signal} received, draining`);
   try {
     await worker.close();
-    await closePool();
+    await Promise.allSettled([closePool(), closePublisher()]);
   } finally {
     process.exit(0);
   }

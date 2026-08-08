@@ -7,6 +7,7 @@ import { cloneRepo } from "./clone.js";
 import { getPool } from "./db.js";
 import { enrichFindings } from "./llm.js";
 import { storeReport } from "./storage.js";
+import { publishScanEvent } from "./pubsub.js";
 
 /** Adding a scanner means adding to this list; they run concurrently. */
 const ADAPTERS = [gitleaksAdapter, semgrepAdapter, osvAdapter];
@@ -52,13 +53,22 @@ export async function runScan(job: ScanJob): Promise<void> {
         console.log(
           `[scan ${scanId}] ${adapter.name}: ${outcome.value.found.length} findings in ${outcome.value.ms}ms`,
         );
+        await recordEvent(
+          scanId,
+          `scanning:${adapter.name}`,
+          `${outcome.value.found.length} finding${outcome.value.found.length === 1 ? "" : "s"}`,
+        ).catch(() => {});
       } else {
         // One broken scanner degrades coverage; it does not fail the scan.
         // A partial report is worth more than no report — but the gap is
         // recorded and surfaced, never presented as a clean result.
         failedScanners.push(adapter.name);
         console.error(`[scan ${scanId}] ${adapter.name} failed:`, message(outcome.reason));
-        await recordEvent(scanId, "scanning", `${adapter.name} failed: ${message(outcome.reason)}`);
+        await recordEvent(
+          scanId,
+          `scanning:${adapter.name}`,
+          `failed: ${message(outcome.reason)}`,
+        ).catch(() => {});
       }
     }
 
@@ -108,6 +118,10 @@ export async function runScan(job: ScanJob): Promise<void> {
       `[scan ${scanId}] done: score=${score} verdict=${verdict} findings=${deduped.length}` +
         (failedScanners.length ? ` (partial: ${failedScanners.join(", ")} failed)` : ""),
     );
+
+    // Emitted only after the row is committed, so a client that reacts to this
+    // by re-fetching the report cannot observe a half-written scan.
+    await recordEvent(scanId, "done", `score ${score}, verdict ${verdict}`).catch(() => {});
   } catch (err) {
     // Any unhandled failure must land the scan in `failed` with a reason.
     // A scan stuck in `queued` tells the user nothing and never resolves.
@@ -221,8 +235,15 @@ async function setStatus(scanId: string, status: ScanStatus): Promise<void> {
   await recordEvent(scanId, status, null);
 }
 
-/** Phase 4 relays these over SSE; persisting them lets a late client replay. */
+/**
+ * One place emits progress, so the live stream and the replay log cannot drift.
+ *
+ * Published first, then persisted: publishing never throws, and a viewer
+ * watching right now should still see the phase even if the insert fails. The
+ * row is what lets a client that connects later replay what it missed.
+ */
 async function recordEvent(scanId: string, phase: string, msg: string | null): Promise<void> {
+  await publishScanEvent(scanId, phase, msg);
   await getPool().query(
     `insert into scan_events (scan_id, phase, message) values ($1, $2, $3)`,
     [scanId, phase, msg],
