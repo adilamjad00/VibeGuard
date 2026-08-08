@@ -5,7 +5,7 @@ import { config } from "./env.js";
 import { migrate } from "./migrate.js";
 import { healthReport } from "./health.js";
 import { closePool } from "./db.js";
-import { closeValkey } from "./valkey.js";
+import { closeValkey, getValkey } from "./valkey.js";
 import { scanRoutes } from "./routes/scans.js";
 
 const app = Fastify({
@@ -21,10 +21,23 @@ await app.register(cors, { origin: config.corsOrigin });
 // repository. Without a cap this endpoint is a fetch amplifier pointed at
 // GitHub, so it is rate limited by source IP. Reads are left generous — the
 // frontend polls them.
+//
+// The counter lives in Valkey, not in process memory. An in-memory store is
+// per-replica, so scaling `api` to N containers silently multiplies the real
+// limit by N — the one thing this control exists to prevent.
 await app.register(rateLimit, {
   global: false,
   max: 10,
   timeWindow: "1 minute",
+  redis: getValkey(),
+  // Distinct prefix so these counters can never collide with BullMQ's keys in
+  // the same Valkey instance.
+  nameSpace: "vibeguard-ratelimit:",
+  // Fail open if Valkey is unreachable. That sounds permissive for a security
+  // control, but POST /scans enqueues through the same Valkey — if it is down
+  // the request already fails at enqueueScan with a 503, so failing closed here
+  // would only swap one rejection for a less informative one.
+  skipOnError: true,
 });
 
 await app.register(scanRoutes);
