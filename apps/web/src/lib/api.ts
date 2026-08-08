@@ -7,6 +7,7 @@ export interface HealthReport {
   valkey: string;
   s3: string;
   uptimeSeconds: number;
+  activeStreams?: number;
 }
 
 export type HealthProbe =

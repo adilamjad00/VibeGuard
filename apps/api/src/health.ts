@@ -2,6 +2,7 @@ import { HeadBucketCommand } from "@aws-sdk/client-s3";
 import { getPool } from "./db.js";
 import { getValkey } from "./valkey.js";
 import { getBucket, getS3 } from "./s3.js";
+import { activeSubscriptionCount } from "./pubsub.js";
 
 export type CheckResult = "ok" | `error: ${string}`;
 
@@ -11,6 +12,12 @@ export interface HealthReport {
   valkey: CheckResult;
   s3: CheckResult;
   uptimeSeconds: number;
+  /**
+   * Scans with at least one open SSE listener. Exposed because "the stream
+   * unsubscribes on disconnect" is otherwise an untestable claim — this makes
+   * a leaked subscription visible instead of something we assert.
+   */
+  activeStreams: number;
 }
 
 /** Never rejects — a failed dependency is data, not an exception. */
@@ -31,5 +38,12 @@ export async function healthReport(): Promise<HealthReport> {
   ]);
 
   const status = db === "ok" && valkey === "ok" && s3 === "ok" ? "ok" : "degraded";
-  return { status, db, valkey, s3, uptimeSeconds: Math.round(process.uptime()) };
+  return {
+    status,
+    db,
+    valkey,
+    s3,
+    uptimeSeconds: Math.round(process.uptime()),
+    activeStreams: activeSubscriptionCount(),
+  };
 }
