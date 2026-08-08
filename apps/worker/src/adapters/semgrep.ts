@@ -72,17 +72,16 @@ export const semgrepAdapter: ScannerAdapter = {
           ...CONFIGS.flatMap((c) => ["--config", c]),
           "--json",
           "--output", report,
-          // Caps memory per rule-per-file. Without it semgrep-core is killed
-          // outright under pressure ("RPC subprocess exited with code 1") and
-          // the whole scanner is lost; with it, semgrep skips the offending
-          // target, reports the skip, and still returns everything else.
-          "--max-memory", process.env.SEMGREP_MAX_MEMORY_MB ?? "768",
           // semgrep reports usage back to its registry by default. VibeGuard
           // scans *other people's* repositories, so telling a third party what
           // we scanned is not acceptable in a security tool.
           "--metrics=off",
-          // The worker's memory floor is 1 GB and semgrep is the heaviest thing
-          // that runs here; parallel workers multiply peak RSS.
+          // semgrep is the heaviest thing that runs here and parallel workers
+          // multiply peak RSS. No --max-memory cap: capping semgrep-core's own
+          // budget made it abort during rule validation ("RPC subprocess exited
+          // with code 1"), which cost the whole scanner. The container's 2 GB
+          // floor is the right place to bound this, not a flag that turns
+          // pressure into a hard failure.
           "--jobs", "1",
           "--timeout", "60",       // per-rule, so one pathological file cannot stall the scan
           "--disable-version-check",
