@@ -1,5 +1,7 @@
 import { Worker, type Job } from "bullmq";
 import { checkScannerTools } from "./toolcheck.js";
+import { runScan, type ScanJob } from "./pipeline.js";
+import { closePool } from "./db.js";
 
 const connection = {
   host: process.env.VALKEY_HOST!,
@@ -12,9 +14,9 @@ const connection = {
 
 await checkScannerTools();
 
-// Phase 2 replaces this with the clone -> scan -> score -> persist pipeline.
-async function processScan(job: Job<{ scanId: string; repoUrl: string }>) {
+async function processScan(job: Job<ScanJob>) {
   console.log(`[worker] received job ${job.id}`, job.data);
+  await runScan(job.data);
   return { ok: true };
 }
 
@@ -31,6 +33,7 @@ async function shutdown(signal: string) {
   console.log(`[worker] ${signal} received, draining`);
   try {
     await worker.close();
+    await closePool();
   } finally {
     process.exit(0);
   }

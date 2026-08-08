@@ -1,10 +1,12 @@
 import Fastify from "fastify";
 import cors from "@fastify/cors";
+import rateLimit from "@fastify/rate-limit";
 import { config } from "./env.js";
 import { migrate } from "./migrate.js";
 import { healthReport } from "./health.js";
 import { closePool } from "./db.js";
 import { closeValkey } from "./valkey.js";
+import { scanRoutes } from "./routes/scans.js";
 
 const app = Fastify({
   logger: { level: process.env.LOG_LEVEL ?? "info" },
@@ -14,6 +16,18 @@ const app = Fastify({
 });
 
 await app.register(cors, { origin: config.corsOrigin });
+
+// Each accepted POST /scans makes a private worker clone an arbitrary remote
+// repository. Without a cap this endpoint is a fetch amplifier pointed at
+// GitHub, so it is rate limited by source IP. Reads are left generous — the
+// frontend polls them.
+await app.register(rateLimit, {
+  global: false,
+  max: 10,
+  timeWindow: "1 minute",
+});
+
+await app.register(scanRoutes);
 
 /**
  * Reports each dependency independently and answers 503 unless all three are

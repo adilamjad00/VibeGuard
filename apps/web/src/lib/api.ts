@@ -13,6 +13,46 @@ export type HealthProbe =
   | { reachable: true; report: HealthReport }
   | { reachable: false; error: string };
 
+export type Severity = "critical" | "high" | "medium" | "low" | "info";
+
+export interface Finding {
+  source: string;
+  category: string;
+  severity: Severity;
+  title: string;
+  filePath?: string;
+  lineStart?: number;
+  lineEnd?: number;
+  snippet?: string;
+  explanation?: string;
+  recommendedFix?: string;
+  fingerprint: string;
+}
+
+export interface Scan {
+  id: string;
+  repoUrl: string;
+  commitSha: string | null;
+  status: "queued" | "cloning" | "scanning" | "analyzing" | "done" | "failed";
+  score: number | null;
+  verdict: "pass" | "review" | "block" | null;
+  summary: Record<Severity, number> | null;
+  createdAt: string;
+  completedAt: string | null;
+  findings: Finding[];
+}
+
+/** Returns null for 404 so the page can render "not found" rather than crash. */
+export async function fetchScan(id: string): Promise<Scan | null> {
+  const res = await fetch(`${API_INTERNAL_URL}/scans/${id}`, {
+    cache: "no-store",
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`api returned ${res.status}`);
+  return (await res.json()) as Scan;
+}
+
 /** Never throws — an unreachable API is a state the page renders, not a crash. */
 export async function fetchHealth(): Promise<HealthProbe> {
   try {

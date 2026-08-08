@@ -1,4 +1,5 @@
 import { fetchHealth, type HealthProbe } from "@/lib/api";
+import { ScanForm } from "./ScanForm";
 
 // The health panel must reflect the API right now; a cached "healthy" badge
 // would be worse than no badge.
@@ -64,19 +65,7 @@ export default async function Home() {
 
       <div className="panel">
         <h2>Scan a repository</h2>
-        <div className="field">
-          <input
-            type="url"
-            placeholder="https://github.com/user/repo"
-            disabled
-            aria-label="Repository URL"
-          />
-          <button disabled>Scan</button>
-        </div>
-        <p className="hint">
-          Scanning goes live in the next deploy. This build proves the infrastructure:
-          six services, one private network, health-checked end to end.
-        </p>
+        <ScanForm />
       </div>
 
       <HealthPanel probe={probe} />
