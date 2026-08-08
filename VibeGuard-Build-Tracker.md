@@ -2,10 +2,10 @@
 ### The Zerops Challenge · Solo · 48h · Check off as you go
 
 ```
-Progress: [███░░░░░░░░░░░░░░░░░]  15%   ·   Phase 1 complete → Phase 2 next
+Progress: [████████████░░░░░░░░]  60%   ·   Phases 1–3 complete → Phase 4 next
 ```
 
-> **You are here:** Phase 1 done (skeleton deployed, `/healthz` green, worker "ready"). **Next: Phase 2 — make the pipeline actually scan.**
+> **You are here:** Phases 1, 2 and 3 audited against the live deployment and complete. **Next: Phase 4 — live progress via Valkey pub/sub + SSE.**
 >
 > **How to use this tracker**
 > - Tick each box as you finish it. Each phase's boxes ≈ that phase's % band.
@@ -22,8 +22,8 @@ Progress: [███░░░░░░░░░░░░░░░░░]  15%   
 |---|---|---|---|---|
 | **0** | Setup & services | 0→5% | **5%** | ✅ Done |
 | **1** | Empty-but-wired deploy | 5→15% | **15%** | ✅ Done |
-| **2** | Thin end-to-end scan (1 real finding) | 15→35% | 35% | ⬜ Next |
-| **3** | All scanners + LLM + score + S3 | 35→60% | 60% | ⬜ |
+| **2** | Thin end-to-end scan (1 real finding) | 15→35% | 35% | ✅ Done |
+| **3** | All scanners + LLM + score + S3 | 35→60% | **60%** | ✅ Done |
 | **4** | Live progress (SSE) | 60→72% | 72% | ⬜ |
 | **5** | Polish + UX + autoscaling | 72→86% | 86% | ⬜ |
 | **6** | Demo + README + post + **SUBMIT** | 86→100% | 100% | ⬜ |
@@ -57,62 +57,76 @@ Progress: [███░░░░░░░░░░░░░░░░░]  15%   
 
 ---
 
-## ⬜ Phase 2 — Thin end-to-end scan `(15 → 35%)` 🎯 NEXT
-**Goal:** submit a repo URL → the pipeline runs gitleaks → a real finding + score appear on a live page.
-**Est: ~4h.**
+## ✅ Phase 2 — Thin end-to-end scan `(15 → 35%)` — DONE
 
 **API**
-- [ ] `POST /scans` — validate `repoUrl` (zod), insert `scans` row (`status='queued'`), enqueue BullMQ job, return `{scanId}`
-- [ ] `GET /scans/:id` — return scan + its findings from Postgres
-- [ ] IP rate-limit on `POST /scans` (Valkey token bucket) — quick, prevents abuse in demo
+- [x] `POST /scans` — validate `repoUrl`, insert `scans` row, enqueue BullMQ job, return `{scanId}`
+- [x] `GET /scans/:id` — return scan + its findings from Postgres
+- [x] IP rate-limit on `POST /scans` — **Valkey-backed** (was in-memory, i.e. per-replica; fixed during audit)
 
 **Worker**
-- [ ] Consume the `scans` queue job
-- [ ] `clone.ts` — shallow `git clone --depth 1` into a temp dir, **size cap + timeout**, update status `cloning`
-- [ ] Run the **gitleaks adapter** (already written) → `NormalizedFinding[]`
-- [ ] Persist findings to the `findings` table
-- [ ] Compute score via `packages/core` (`shipReadinessScore` + `verdictFor` + `summarize`) → update `scans` (`score`, `verdict`, `summary`, `status='done'`, `completed_at`)
-- [ ] Delete the cloned dir (never keep untrusted code around)
-- [ ] Wrap each step in try/catch → on failure set `status='failed'` with a reason (never hang)
+- [x] Consume the `scans` queue job
+- [x] `clone.ts` — shallow `--depth 1` into a temp dir, size cap + timeout, status `cloning`
+- [x] gitleaks adapter → `NormalizedFinding[]`
+- [x] Persist findings to the `findings` table
+- [x] Score via `packages/core` → update `scans`
+- [x] Delete the cloned dir (`finally` block)
+- [x] try/catch → `status='failed'` with a reason
 
 **Web**
-- [ ] `/` page — `RepoInput` posts to `POST /scans`, redirects to `/scan/[id]`
-- [ ] `/scan/[id]` page — fetch report, render score number + verdict + a plain list of findings (styling comes in Phase 5)
+- [x] `/` page — `ScanForm` posts to `POST /scans`, redirects to `/scan/[id]`
+- [x] `/scan/[id]` page — score, verdict, findings list
 
-**Verify & commit**
-- [ ] Scan your seed repo → **it finds the hardcoded key**, shows a score, marks done
-- [ ] Deploy; confirm the live URL still works
-- [ ] Commit: "feat: end-to-end scan with gitleaks + score"
+**Verification evidence (live)**
+- Scan of the seed repo returns 4 real gitleaks findings at `src/config.js:19–22`, redacted, with
+  repo-relative paths and temp-dir-free fingerprints.
+- SSRF allowlist rejects `http://`, `file://`, `169.254.169.254`, internal `valkey`, embedded
+  credentials and non-GitHub hosts (12 unit tests).
+- `/healthz` 200 `{db, valkey, s3 all ok}`; web 200.
 
-**Done when:** pasting the seed repo URL on the live site returns a real finding + score.
+> **Caught here:** the first live scan returned **score 100 / pass** on a repo full of planted
+> flaws — deprecated gitleaks invocation, a `catch {}` that hid it, and a fixture secret no scanner
+> could match. See `docs/ARCHITECTURE.md` § Phase 2.
 
 ---
 
-## ⬜ Phase 3 — All scanners + LLM + S3 `(35 → 60%)`
-**Goal:** three real scanners run in parallel, the LLM explains each finding with a fix, and the raw report lands in object storage.
-**Est: ~4h. This is the "depth" that separates you from the pack.**
+## ✅ Phase 3 — All scanners + LLM + S3 `(35 → 60%)` — DONE
 
-**Scanners (copy the gitleaks pattern)**
-- [ ] `semgrep` adapter — `semgrep scan --config p/owasp-top-ten --config p/secrets --json` → map `results[]` → findings (this alone catches SQLi *and* secrets — your safety net)
-- [ ] `osv` adapter — dependency CVEs from lockfiles → `category:"dependency"`
-- [ ] Run all three adapters in **parallel** (`Promise.all`), merge, **dedup by `fingerprint`**
+**Scanners**
+- [x] `semgrep` adapter — rulesets **vendored into the image**, not fetched per scan (registry rate-limited; and `p/owasp-top-ten` alone found nothing on the demo repo)
+- [x] `osv` adapter — dependency CVEs, severity from CVSS group score
+- [x] All three run in **parallel** — `Promise.allSettled`, deliberately not `Promise.all`, which would discard good results when one scanner fails
+- [x] Dedup by fingerprint **and** by `(file, line, category)` across scanners
 
 **LLM pass (`llm.ts`)**
-- [ ] For each finding (cap to top N by severity for cost), send **only the snippet + a small window** → strict JSON `{explanation, recommendedFix}`
-- [ ] Validate/repair the JSON; on failure keep the static finding **with no explanation** (never blank the report)
-- [ ] Attach `explanation` + `recommendedFix` to findings before persisting
+- [x] Top N by severity, snippet + small window only, secrets masked before sending
+- [x] **Structured outputs** (`messages.parse` + `zodOutputFormat`) replace the validate/repair loop
+- [x] Failure keeps the static finding with no explanation; unset key is a supported state
+- [x] Score computed **before** the LLM runs, so enrichment cannot move a verdict
 
 **Object storage**
-- [ ] Write the full raw report JSON to S3 (`storage`), save `report_object_key` on the scan
-- [ ] (Optional) `GET /scans/:id/report` → presigned S3 URL
+- [x] Normalised **redacted** report to S3 (never raw scanner stdout), `report_object_key` saved
+- [x] `GET /scans/:id/report` → 5-minute presigned URL
 
-**Verify & commit**
-- [ ] Score now reflects multiple severities; explanations + fixes show on findings
-- [ ] **Tune score weights** so the seed repo lands ~40 pre-fix (sets up the before/after)
-- [ ] Report JSON confirmed in object storage
-- [ ] Deploy; confirm live; commit: "feat: semgrep + osv + LLM explanations + S3 reports"
+**Verification evidence (live, scan `072d2369`)**
+- 24 findings from **all three sources**: `{osv: 19, gitleaks: 4, semgrep: 1}`, `failedScanners: []`,
+  stable across 3 consecutive runs.
+- semgrep catches the command injection at `src/server.js:7`.
+- 12/24 findings carry an explanation + concrete fix (top-N cap by severity; the rest persist
+  un-enriched, which is the intended degradation).
+- Archived report fetched via presigned URL: contains **none** of the 4 fixture credentials;
+  unsigned access to the same object returns **403**.
+- 44/44 unit tests green (13 core + 12 api + 19 worker); all four workspaces build.
 
-**Done when:** a scan shows findings from ≥2 sources, each with a readable explanation + fix, and the report is in S3.
+> **Score is 0/block, not ~40.** Total penalty 143.75, of which **90 (63%) is dependency CVEs** from
+> an outdated `express` tree that was never deliberately planted. Damping cut the penalty from ~239
+> to 144 and works as designed, but this fixture is genuinely catastrophic. Reaching ~40 needs a
+> lighter planted dependency — a demo-fixture decision, not a scoring one. Weakening severity
+> weights to manufacture the number was rejected. See the note below.
+
+**Open follow-up (demo narrative, not code):** replace the demo repo's `lodash@4.17.11` + outdated
+`express` tree with a single lighter vulnerable dependency (e.g. `minimist@1.2.5`). Projected score
+≈ 36 with all three scanners still firing, which restores the before/after beat.
 
 ---
 
