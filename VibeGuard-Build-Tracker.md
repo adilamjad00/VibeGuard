@@ -108,25 +108,33 @@ Progress: [████████████░░░░░░░░]  60%   
 - [x] Normalised **redacted** report to S3 (never raw scanner stdout), `report_object_key` saved
 - [x] `GET /scans/:id/report` → 5-minute presigned URL
 
-**Verification evidence (live, scan `072d2369`)**
-- 24 findings from **all three sources**: `{osv: 19, gitleaks: 4, semgrep: 1}`, `failedScanners: []`,
-  stable across 3 consecutive runs.
-- semgrep catches the command injection at `src/server.js:7`.
-- 12/24 findings carry an explanation + concrete fix (top-N cap by severity; the rest persist
-  un-enriched, which is the intended degradation).
-- Archived report fetched via presigned URL: contains **none** of the 4 fixture credentials;
+**Verification evidence (live, scan `9635fa17`)**
+
+```
+STATUS done  SCORE 36  VERDICT block   failedScanners []
+sources: {gitleaks: 4, osv: 1, semgrep: 1}      explained: 6/6
+
+[critical] gitleaks src/config.js:19-22  Hardcoded secret: generic-api-key  (x4)
+[high    ] semgrep  src/server.js:7      Detect child process
+[high    ] osv      package-lock.json    node-fetch@2.6.6: GHSA-r683-j2x4-v87g
+```
+
+- All **three** scanners fire; stable across repeated runs after the vendored-rules fix.
+- Every finding carries an explanation + concrete fix.
+- Archived report fetched via presigned URL contains **none** of the 4 fixture credentials;
   unsigned access to the same object returns **403**.
 - 44/44 unit tests green (13 core + 12 api + 19 worker); all four workspaces build.
 
-> **Score is 0/block, not ~40.** Total penalty 143.75, of which **90 (63%) is dependency CVEs** from
-> an outdated `express` tree that was never deliberately planted. Damping cut the penalty from ~239
-> to 144 and works as designed, but this fixture is genuinely catastrophic. Reaching ~40 needs a
-> lighter planted dependency — a demo-fixture decision, not a scoring one. Weakening severity
-> weights to manufacture the number was rejected. See the note below.
+**Score target met honestly — 36/block, no scoring change.** The earlier 0 came from an
+`express@4.18.2` transitive cascade of 19 advisories that was never deliberately planted and
+accounted for 63% of the penalty. Fixed in the **fixture**, not the scorer: `express@5.1.0` (clean —
+`4.21.2` no longer is) plus `node-fetch@2.6.6` contributing exactly one HIGH advisory. Severity
+weights were never touched. Removing the committed secrets takes the score to **80 / pass**, so the
+before/after beat crosses the verdict boundary.
 
-**Open follow-up (demo narrative, not code):** replace the demo repo's `lodash@4.17.11` + outdated
-`express` tree with a single lighter vulnerable dependency (e.g. `minimist@1.2.5`). Projected score
-≈ 36 with all three scanners still firing, which restores the before/after beat.
+**Still open (deliberately, not a Phase 3 criterion):** raising worker RAM would let semgrep run a
+wider ruleset. `zcli` has no autoscaling command and the API rejects the CLI token for it, so this
+needs the GUI.
 
 ---
 
