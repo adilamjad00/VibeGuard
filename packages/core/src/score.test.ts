@@ -85,6 +85,34 @@ test("damping applies per rule, so distinct rules still stack fully", () => {
   assert.equal(shipReadinessScore(findings("critical", "critical", "critical")), 25);
 });
 
+test("many CVEs in one package count as one outdated package", () => {
+  // Measured on the demo repo: 19 transitive advisories outweighed four
+  // committed secrets and a command injection combined. One `npm update` closes
+  // all of a package's advisories, so it is one problem.
+  const lodash = (id: string): NormalizedFinding => ({
+    source: "osv",
+    category: "dependency",
+    severity: "high",
+    title: `lodash@4.17.11: ${id}`,
+    fingerprint: `osv:lock:lodash:${id}`,
+  });
+
+  // 3 advisories, one package: 10 * (1 + 0.25*2) = 15, not 30.
+  assert.equal(shipReadinessScore([lodash("GHSA-1"), lodash("GHSA-2"), lodash("GHSA-3")]), 85);
+});
+
+test("distinct packages are still distinct problems", () => {
+  const dep = (name: string): NormalizedFinding => ({
+    source: "osv",
+    category: "dependency",
+    severity: "high",
+    title: `${name}@1.0.0: GHSA-x`,
+    fingerprint: `osv:lock:${name}`,
+  });
+  // Two different packages need two different upgrades: 20, not 12.5.
+  assert.equal(shipReadinessScore([dep("lodash"), dep("express")]), 80);
+});
+
 test("the demo repo profile is off the floor and still blocks", () => {
   // The real seed repo: 4 secrets from one gitleaks rule (43.75 damped, not
   // 100), SQL injection + command injection (10 each), missing authz (4).

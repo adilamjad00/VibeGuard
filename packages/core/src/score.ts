@@ -29,9 +29,23 @@ export function summarize(findings: NormalizedFinding[]): ScanSummary {
  * Identity of the *rule*, not of the finding. Two hits from the same detector
  * with the same title are the same rule firing twice; the file path is not part
  * of it, so a secret repeated across three files still damps.
+ *
+ * Dependency findings group by package rather than by advisory id. One
+ * outdated package routinely carries a dozen CVEs, and measured against the
+ * demo repo those transitive advisories outweighed four committed secrets and a
+ * command injection combined — which is precisely backwards. `npm update
+ * lodash` is one action no matter how many advisories it closes, so it counts
+ * as one problem.
  */
 function ruleKey(f: NormalizedFinding): string {
-  return `${f.source}|${f.category}|${f.severity}|${f.title}`;
+  const identity = f.category === "dependency" ? packageOf(f.title) : f.title;
+  return `${f.source}|${f.category}|${f.severity}|${identity}`;
+}
+
+/** `lodash@4.17.11: GHSA-jf85-cpcp-j695` → `lodash@4.17.11`. */
+function packageOf(title: string): string {
+  const separator = title.indexOf(":");
+  return separator === -1 ? title : title.slice(0, separator).trim();
 }
 
 /** 100 minus damped weighted severity, clamped to [0,100]. Deterministic. */

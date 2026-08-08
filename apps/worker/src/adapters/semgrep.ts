@@ -12,25 +12,71 @@ const run = promisify(execFile);
 const TIMEOUT_MS = Number(process.env.SEMGREP_TIMEOUT_MS ?? 300_000);
 
 /**
- * Two registry rulesets. `p/owasp-top-ten` is the injection/authz coverage and
- * `p/secrets` overlaps gitleaks deliberately — two independent detectors on the
- * same class of bug is the point, and the pipeline collapses the overlap.
+ * Rulesets, resolved from local files baked into the runtime image by
+ * `zerops.yaml` — deliberately not `p/…` registry references.
+ *
+ * Two measured reasons. Coverage: `p/owasp-top-ten` + `p/secrets` ran 108 rules
+ * over the demo repo and found nothing, on code containing a textbook
+ * `exec("ping -c 1 " + req.query.host)` — the Node sinks live in
+ * `p/security-audit` and `p/javascript`. Reliability: registry-backed configs
+ * worked for the first few scans and then failed persistently, which is what an
+ * anonymous rate limit looks like.
+ *
+ * A scanner that fetches its rules over the network at scan time is a scanner
+ * that stops working mid-demo, and "no rules loaded" is indistinguishable from
+ * "clean repository" unless you look — so the rule and file counts are logged
+ * on every run, and scanning zero files is treated as a failure.
  */
-const CONFIGS = ["p/owasp-top-ten", "p/secrets"];
+const CONFIGS = (
+  process.env.SEMGREP_CONFIGS ??
+  "/opt/semgrep-rules/security-audit.yaml,/opt/semgrep-rules/javascript.yaml,/opt/semgrep-rules/secrets.yaml"
+)
+  .split(",")
+  .map((c) => c.trim())
+  .filter(Boolean);
+
+/**
+ * Runs semgrep, retrying once on a *fatal* exit.
+ *
+ * Observed in production: an identical invocation succeeded twice and then
+ * failed with "semgrep-core rule validation failed … RPC subprocess exited with
+ * code 1" — a transient crash of the OCaml core, not a bad configuration.
+ * Losing an entire scanner to that is worse than paying for one retry.
+ *
+ * This does not hide failures. Exit 1 (findings) returns immediately, and if the
+ * retry also fails the error propagates and the scan is marked partial.
+ */
+async function runWithRetry(
+  args: string[],
+  options: { timeout: number; maxBuffer: number },
+): Promise<{ stdout: string; stderr: string }> {
+  try {
+    return await run("semgrep", args, options);
+  } catch (err) {
+    if (isSemgrepSuccess(exitCode(err))) throw err;   // findings — caller handles
+    console.warn(`[semgrep] retrying after: ${errorText(err)}`);
+    return await run("semgrep", args, options);
+  }
+}
 
 export const semgrepAdapter: ScannerAdapter = {
   name: "semgrep",
   async run(ctx: ScanContext): Promise<NormalizedFinding[]> {
     const report = join(tmpdir(), `semgrep-${randomUUID()}.json`);
 
+    let stderr = "";
     try {
-      await run(
-        "semgrep",
+      const result = await runWithRetry(
         [
           "scan",
           ...CONFIGS.flatMap((c) => ["--config", c]),
           "--json",
           "--output", report,
+          // Caps memory per rule-per-file. Without it semgrep-core is killed
+          // outright under pressure ("RPC subprocess exited with code 1") and
+          // the whole scanner is lost; with it, semgrep skips the offending
+          // target, reports the skip, and still returns everything else.
+          "--max-memory", process.env.SEMGREP_MAX_MEMORY_MB ?? "768",
           // semgrep reports usage back to its registry by default. VibeGuard
           // scans *other people's* repositories, so telling a third party what
           // we scanned is not acceptable in a security tool.
@@ -44,20 +90,41 @@ export const semgrepAdapter: ScannerAdapter = {
         ],
         { timeout: TIMEOUT_MS, maxBuffer: 16 * 1024 * 1024 },
       );
+      stderr = result.stderr ?? "";
     } catch (err) {
       const code = exitCode(err);
       if (!isSemgrepSuccess(code)) {
         throw new Error(`semgrep failed (exit ${code ?? "?"}): ${errorText(err)}`);
       }
+      stderr = (err as { stderr?: string }).stderr ?? "";
     }
 
-    let parsed: unknown;
+    let parsed: any;
     try {
       parsed = JSON.parse(await readFile(report, "utf8"));
     } catch (err) {
       // An unreadable report after an accepted exit code is a failure, not an
       // empty result.
       throw new Error(`semgrep report unreadable: ${errorText(err)}`);
+    }
+
+    // A scanner that loads no rules, or scans no files, reports zero findings
+    // and exits 0 — indistinguishable from a clean repo unless we look. That is
+    // the false-clean failure mode, so it is checked explicitly and raised.
+    const scanned = Array.isArray(parsed?.paths?.scanned) ? parsed.paths.scanned.length : 0;
+    const errors = Array.isArray(parsed?.errors) ? parsed.errors : [];
+    if (errors.length > 0) {
+      console.error(`[semgrep] reported ${errors.length} error(s): ${summarizeErrors(errors)}`);
+    }
+    if (stderr.trim()) {
+      console.error(`[semgrep] stderr: ${stderr.trim().split("\n").slice(-4).join(" | ").slice(0, 500)}`);
+    }
+    console.log(`[semgrep] scanned ${scanned} file(s)`);
+    if (scanned === 0) {
+      throw new Error(
+        `semgrep scanned 0 files (${errors.length} error(s): ${summarizeErrors(errors)}) — ` +
+          `reporting this as "no findings" would be a false clean result`,
+      );
     }
 
     return mapSemgrepResults(parsed);
@@ -159,6 +226,16 @@ function numberOr(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
+function summarizeErrors(errors: any[]): string {
+  return (
+    errors
+      .slice(0, 3)
+      .map((e) => String(e?.long_msg ?? e?.message ?? e?.type ?? "unknown"))
+      .join("; ")
+      .slice(0, 300) || "none"
+  );
+}
+
 export function exitCode(err: unknown): number | undefined {
   if (err && typeof err === "object") {
     const code = (err as { code?: unknown }).code;
@@ -167,12 +244,25 @@ export function exitCode(err: unknown): number | undefined {
   return undefined;
 }
 
+/**
+ * Pulls the actual error out of a CLI failure.
+ *
+ * Naively taking the last few lines of stderr is wrong for semgrep: it prints a
+ * rule-count table *after* the error, so the tail is a wall of numbers and the
+ * real message is lost — which cost a diagnostic round-trip. Lines that look
+ * like errors are preferred, with the tail only as a fallback.
+ */
 export function errorText(err: unknown): string {
   if (err && typeof err === "object") {
-    const e = err as { killed?: boolean; stderr?: string; message?: string };
+    const e = err as { killed?: boolean; stderr?: string; stdout?: string; message?: string };
     if (e.killed) return "timed out";
-    const stderr = (e.stderr ?? "").trim();
-    if (stderr) return stderr.split("\n").slice(-3).join(" ").slice(0, 300);
+
+    const output = `${e.stderr ?? ""}\n${e.stdout ?? ""}`;
+    const lines = output.split("\n").map((l) => l.trim()).filter(Boolean);
+
+    const errorLines = lines.filter((l) => /error|fatal|failed|exception|traceback/i.test(l));
+    if (errorLines.length) return errorLines.slice(0, 3).join(" | ").slice(0, 400);
+    if (lines.length) return lines.slice(-3).join(" | ").slice(0, 400);
     if (e.message) return e.message.slice(0, 300);
   }
   return String(err).slice(0, 300);
