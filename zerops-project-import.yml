@@ -70,6 +70,18 @@ services:
       # Observed in production: the default floor (0.12 GB) OOM-killed the
       # container seconds after startup. Node plus the deployed artefact needs
       # more, and semgrep needs substantially more again once scans run.
-      minRam: 1
+      #
+      # Raised to 2 GB on the live project after a semgrep failure. That failure
+      # turned out to be a `--max-memory` flag in the scanner command rather
+      # than a container limit, but the headroom is kept: semgrep is the
+      # heaviest step and a scan that OOMs mid-run costs a whole demo.
+      minRam: 2
       maxRam: 6
+    # Horizontal autoscaling. Scans are queued work, so extra containers
+    # translate directly into throughput: BullMQ hands each replica a different
+    # job, and the pipeline holds no in-process state between them. One
+    # container is enough to idle cheaply; three absorbs a burst of concurrent
+    # submissions without a queue backlog.
+    minContainers: 1
+    maxContainers: 3
     priority: 1

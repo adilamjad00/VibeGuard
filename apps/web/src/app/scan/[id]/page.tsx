@@ -1,12 +1,20 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { fetchScan, type Finding, type Scan } from "@/lib/api";
+import { fetchScan, type Scan } from "@/lib/api";
 import { LiveProgress } from "./LiveProgress";
+import { ScanReport } from "@/components/ScanReport";
+import { ScanHeader } from "@/components/ScanHeader";
+import { StateCard } from "@/components/StateCard";
 
 export const dynamic = "force-dynamic";
 
 const IN_PROGRESS = new Set(["queued", "cloning", "scanning", "analyzing"]);
 
+/**
+ * One route, five terminal states: unreachable API, unknown scan, failed scan,
+ * running scan, finished report. Each is rendered deliberately rather than
+ * falling through to a blank page.
+ */
 export default async function ScanPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
 
@@ -15,136 +23,65 @@ export default async function ScanPage({ params }: { params: Promise<{ id: strin
     scan = await fetchScan(id);
   } catch (err) {
     return (
-      <main>
-        <Back />
-        <h1 className="brand">Scan unavailable</h1>
-        <p className="tagline">
-          Could not load this scan: {err instanceof Error ? err.message : String(err)}
-        </p>
-      </main>
+      <Shell>
+        <StateCard
+          tone="block"
+          badge="Unavailable"
+          title="Could not load this scan"
+          body={`The API did not answer: ${err instanceof Error ? err.message : String(err)}. The scan itself may still be running — reloading is safe.`}
+        >
+          <Link href={`/scan/${id}`} className="brut-btn px-4 py-2 text-xs no-underline">
+            Retry
+          </Link>
+          <Link href="/" className="brut-btn-ghost px-4 py-2 text-xs no-underline">
+            New scan
+          </Link>
+        </StateCard>
+      </Shell>
     );
   }
+
   if (!scan) notFound();
 
   if (scan.status === "failed") {
     return (
-      <main>
-        <Back />
-        <h1 className="brand">Scan failed</h1>
-        <p className="tagline">
-          <code>{scan.repoUrl}</code> could not be scanned. The repository may be private, missing,
-          or larger than the scan limit.
-        </p>
-      </main>
+      <Shell>
+        <ScanHeader scan={scan} />
+        <StateCard
+          tone="block"
+          badge="Scan failed"
+          title="The pipeline could not complete this scan"
+          body="Every scanner failed, or the repository could not be read. It may be private, missing, or larger than the scan limit. No partial score is shown, because a score built on nothing would imply the code was checked."
+        >
+          <Link href="/" className="brut-btn px-4 py-2 text-xs no-underline">
+            Scan another repo
+          </Link>
+        </StateCard>
+      </Shell>
     );
   }
 
   if (IN_PROGRESS.has(scan.status)) {
     // Rendered on the server so the page is never blank, then handed to a
-    // client component that streams live phases over SSE.
+    // client component that streams live phases over a WebSocket.
     return (
-      <main>
-        <Back />
-        <h1 className="brand">Scanning…</h1>
-        <p className="tagline">
-          Reading <code>{scan.repoUrl}</code> as text in a disposable sandbox. Nothing in it is
-          executed.
-        </p>
+      <Shell>
+        <ScanHeader scan={scan} />
         <LiveProgress scanId={scan.id} initialStatus={scan.status} />
-      </main>
+      </Shell>
     );
   }
 
-  const summary = scan.summary ?? { critical: 0, high: 0, medium: 0, low: 0, info: 0 };
-  const failed = scan.summary?.failedScanners ?? [];
-
   return (
-    <main>
-      <Back />
-      <h1 className="brand">Ship Readiness</h1>
-      <p className="tagline">
-        <code>{scan.repoUrl}</code>
-        {scan.commitSha ? ` @ ${scan.commitSha.slice(0, 7)}` : null}
-      </p>
-
-      {failed.length > 0 ? (
-        <div className="panel warn-panel">
-          <h2>Partial scan</h2>
-          <p className="finding-body">
-            {failed.join(", ")} did not run, so this score reflects fewer checks than usual. Treat
-            it as a floor, not a clean bill of health.
-          </p>
-        </div>
-      ) : null}
-
-      <div className="panel score-panel">
-        <div className={`score verdict-${scan.verdict}`}>{scan.score}</div>
-        <div>
-          <div className={`verdict-label verdict-${scan.verdict}`}>{scan.verdict}</div>
-          <div className="hint">out of 100</div>
-        </div>
-        <div className="breakdown">
-          {(["critical", "high", "medium", "low", "info"] as const).map((sev) => (
-            <div key={sev} className="breakdown-row">
-              <span className={`sev sev-${sev}`}>{sev}</span>
-              <span>{summary[sev] ?? 0}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="panel">
-        <h2>
-          {scan.findings.length} finding{scan.findings.length === 1 ? "" : "s"}
-        </h2>
-        {scan.findings.length === 0 ? (
-          <p className="hint">
-            No issues found by the scanners that ran. That is not a proof of safety — it means these
-            specific checks came back clean.
-          </p>
-        ) : (
-          <div className="findings">
-            {scan.findings.map((f, i) => (
-              <FindingCard key={f.fingerprint || i} finding={f} />
-            ))}
-          </div>
-        )}
-      </div>
-    </main>
+    <Shell>
+      <ScanHeader scan={scan} />
+      <ScanReport scan={scan} />
+    </Shell>
   );
 }
 
-function FindingCard({ finding }: { finding: Finding }) {
+function Shell({ children }: { children: React.ReactNode }) {
   return (
-    <article className="finding">
-      <header>
-        <span className={`sev sev-${finding.severity}`}>{finding.severity}</span>
-        <span className="finding-title">{finding.title}</span>
-        <span className="finding-source">{finding.source}</span>
-      </header>
-      {finding.filePath ? (
-        <p className="finding-loc">
-          {finding.filePath}
-          {finding.lineStart ? `:${finding.lineStart}` : ""}
-        </p>
-      ) : null}
-      {finding.snippet ? <pre className="snippet">{finding.snippet}</pre> : null}
-      {finding.explanation ? <p className="finding-body">{finding.explanation}</p> : null}
-      {finding.recommendedFix ? (
-        <div className="fix">
-          <span className="fix-label">Fix</span>
-          <p className="finding-body">{finding.recommendedFix}</p>
-        </div>
-      ) : null}
-    </article>
+    <main className="mx-auto max-w-5xl space-y-6 px-4 py-10 sm:px-6 sm:py-14">{children}</main>
   );
 }
-
-function Back() {
-  return (
-    <p className="hint">
-      <Link href="/">← New scan</Link>
-    </p>
-  );
-}
-

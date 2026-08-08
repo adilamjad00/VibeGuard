@@ -1,320 +1,295 @@
-/* Phase 1 baseline only. Phase 5 replaces this with Tailwind + shadcn/ui. */
+@import 'tailwindcss';
 
-:root {
-  --bg: #0a0a0f;
-  --panel: #14141c;
-  --border: #26263a;
-  --text: #e8e8f0;
-  --muted: #8b8ba7;
-  --accent: #7c5cff;
-  --ok: #3ddc97;
-  --bad: #ff5c7a;
-  --warn: #ffb057;
+/* ==========================================================================
+   VibeGuard design tokens
+   --------------------------------------------------------------------------
+   Dark-only by design: this is an operator tool that gets demoed on a
+   projector, and a single committed palette is easier to keep contrast-safe
+   than two. Every value below is checked against the page background.
+
+   Two colour scales that must never be confused:
+     - brand/accents  -> chrome only (nav, CTAs, decorative markers)
+     - severity       -> findings only
+   The brand orange and `high` amber are adjacent hues, so they are kept in
+   separate contexts and severity is *always* accompanied by its text label.
+   ========================================================================== */
+
+@theme {
+  --color-ink: #08080d;
+  --color-ink-2: #0c0c13;
+  --color-surface: #101019;
+  --color-surface-2: #16161f;
+  --color-line: #26263a;
+  --color-line-strong: #3a3a52;
+
+  --color-fg: #ececf4;
+  --color-fg-muted: #9494ae;
+
+  /* Chrome accents, used categorically like the reference does. */
+  --color-brand: #ff6a1f;
+  --color-cyan: #35c7f2;
+  --color-violet: #9b7cff;
+  --color-lime: #7de04b;
+
+  /* Severity ramp. Canonical red -> grey so it reads the way security tools
+     are expected to read. */
+  --color-critical: #ff3355;
+  --color-high: #ff9500;
+  --color-medium: #f2d544;
+  --color-low: #4ea8ff;
+  --color-info: #9494ae;
+
+  /* Verdicts reuse the ramp's endpoints so a BLOCK badge and a critical chip
+     agree with each other at a glance. */
+  --color-pass: #45d17a;
+  --color-review: #f2d544;
+  --color-block: #ff3355;
+
+  --font-display: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-mono-jb), ui-monospace, 'SF Mono', Menlo, monospace;
 }
 
-* { box-sizing: border-box; }
+/* ==========================================================================
+   Base
+   ========================================================================== */
 
-html, body {
-  margin: 0;
-  padding: 0;
-  background: var(--bg);
-  color: var(--text);
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background-color: var(--color-ink);
+  color: var(--color-fg);
+  font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
+  /* Faint engineering grid, the reference's dark-section texture. Fixed so it
+     reads as a backdrop rather than something that scrolls with content. */
+  background-image:
+    linear-gradient(to right, rgb(255 255 255 / 0.022) 1px, transparent 1px),
+    linear-gradient(to bottom, rgb(255 255 255 / 0.022) 1px, transparent 1px);
+  background-size: 48px 48px;
+  background-attachment: fixed;
 }
 
-main {
-  max-width: 46rem;
-  margin: 0 auto;
-  padding: 4rem 1.5rem;
+::selection {
+  background: var(--color-brand);
+  color: var(--color-ink);
 }
 
-.brand {
-  font-size: 2.5rem;
-  font-weight: 700;
-  letter-spacing: -0.03em;
-  margin: 0 0 0.5rem;
+/* One visible focus treatment everywhere, bright enough to find on a
+   projector. Applied to :focus-visible only so mouse users never see it. */
+:focus-visible {
+  outline: 3px solid var(--color-brand);
+  outline-offset: 2px;
+  border-radius: 2px;
 }
 
-.tagline {
-  color: var(--muted);
-  font-size: 1.05rem;
-  line-height: 1.6;
-  margin: 0 0 2.5rem;
-}
-
-.panel {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 1.5rem;
-  margin-bottom: 1.5rem;
-}
-
-.panel h2 {
-  font-size: 0.75rem;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--muted);
-  margin: 0 0 1rem;
-  font-weight: 600;
-}
-
-.field {
-  display: flex;
-  gap: 0.75rem;
-}
-
-.field input {
-  flex: 1;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 0.75rem 1rem;
-  color: var(--text);
-  font-size: 0.95rem;
-  font-family: inherit;
-}
-
-.field input:disabled { opacity: 0.5; cursor: not-allowed; }
-
-.field button {
-  background: var(--accent);
-  border: 0;
-  border-radius: 8px;
-  padding: 0.75rem 1.5rem;
-  color: white;
-  font-size: 0.95rem;
-  font-weight: 600;
-  font-family: inherit;
-  cursor: pointer;
-}
-
-.field button:disabled { opacity: 0.4; cursor: not-allowed; }
-
-.hint {
-  color: var(--muted);
-  font-size: 0.85rem;
-  margin: 0.75rem 0 0;
-}
-
-.checks { display: grid; gap: 0.5rem; }
-
-.check {
-  display: flex;
-  align-items: baseline;
-  gap: 0.75rem;
-  font-size: 0.9rem;
-}
-
-.check .name {
-  width: 5rem;
-  color: var(--muted);
-  flex-shrink: 0;
-}
-
-.check .value {
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
-  font-size: 0.85rem;
-  word-break: break-word;
-}
-
-.dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  flex-shrink: 0;
-  align-self: center;
-}
-
-.dot.ok { background: var(--ok); }
-.dot.bad { background: var(--bad); }
-
-.value.ok { color: var(--ok); }
-.value.bad { color: var(--bad); }
-
-footer {
-  color: var(--muted);
-  font-size: 0.8rem;
-  margin-top: 3rem;
-  border-top: 1px solid var(--border);
-  padding-top: 1.5rem;
-}
-
-a { color: var(--accent); }
-
-.error {
-  color: var(--bad);
-  font-size: 0.88rem;
-  margin: 0.75rem 0 0;
-}
-
-.linklike {
-  background: none;
-  border: 0;
-  padding: 0;
-  color: var(--accent);
-  font: inherit;
-  cursor: pointer;
-  text-decoration: underline;
-}
-
-code {
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
-  font-size: 0.9em;
-  color: var(--text);
-}
-
-/* ---------- score ---------- */
-
-.score-panel {
-  display: flex;
-  align-items: center;
-  gap: 1.5rem;
-  flex-wrap: wrap;
-}
-
-.score {
-  font-size: 3.5rem;
-  font-weight: 700;
-  line-height: 1;
-  letter-spacing: -0.04em;
-}
-
-.verdict-label {
-  font-size: 0.95rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-}
-
-.verdict-pass { color: var(--ok); }
-.verdict-review { color: var(--warn); }
-.verdict-block { color: var(--bad); }
-
-.breakdown {
-  margin-left: auto;
-  display: grid;
-  gap: 0.2rem;
-  font-size: 0.82rem;
-}
-
-.breakdown-row {
-  display: flex;
-  gap: 0.75rem;
-  justify-content: space-between;
-  min-width: 8rem;
-}
-
-/* ---------- findings ---------- */
-
-.findings { display: grid; gap: 1rem; }
-
-.finding {
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 1rem;
-  background: var(--bg);
-}
-
-.finding header {
-  display: flex;
-  align-items: baseline;
-  gap: 0.6rem;
-  flex-wrap: wrap;
-}
-
-.finding-title { font-weight: 600; flex: 1; }
-
-.finding-source {
-  color: var(--muted);
-  font-size: 0.75rem;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-}
-
-.finding-loc {
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
-  font-size: 0.8rem;
-  color: var(--muted);
-  margin: 0.5rem 0 0;
-  word-break: break-all;
-}
-
-.finding-body {
-  font-size: 0.9rem;
-  line-height: 1.6;
-  margin: 0.6rem 0 0;
-  color: var(--text);
-}
-
-.snippet {
-  background: #0d0d14;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 0.6rem 0.75rem;
-  margin: 0.6rem 0 0;
-  font-size: 0.78rem;
-  overflow-x: auto;
-  color: var(--warn);
-}
-
-.fix { margin-top: 0.75rem; }
-
-.fix-label {
-  font-size: 0.7rem;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--ok);
-  font-weight: 700;
-}
-
-.sev {
-  font-size: 0.68rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  padding: 0.15rem 0.45rem;
-  border-radius: 4px;
-}
-
-/* ---------- live progress ---------- */
-
-.live-dot {
-  display: inline-block;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--ok);
-  margin-left: 0.4rem;
-  animation: pulse 1.4s ease-in-out infinite;
-}
-
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.25; }
-}
-
-/* Respect users who have asked the OS for less motion. */
 @media (prefers-reduced-motion: reduce) {
-  .live-dot { animation: none; }
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
-.checks ol, ol.checks { list-style: none; margin: 0; padding: 0; }
+/* ==========================================================================
+   Neo-brutalist primitives
+   --------------------------------------------------------------------------
+   The offset shadow is a *lighter* colour than the page, not black: on a
+   near-black background a black shadow is invisible, so the depth cue has to
+   run the other way.
+   ========================================================================== */
 
-.phase-active { color: var(--text); font-weight: 600; }
-.phase-done { color: var(--ok); }
-.phase-pending { color: var(--muted); }
-
-.warn-panel {
-  border-color: var(--warn);
-  background: #241c10;
+/* Surface and shadow only — deliberately NOT the border.
+   A `border` shorthand here would be emitted after the generated colour
+   utilities and silently overwrite them, which is exactly what happened the
+   first time: every `border-critical` / `border-high` / `border-l-*` on a card
+   resolved back to the default line colour. Borders are therefore always
+   written explicitly at the call site, where Tailwind's own ordering applies
+   and a severity colour reliably wins. */
+@utility brut {
+  box-shadow: 4px 4px 0 0 #1a1a26;
+  background-color: var(--color-surface);
 }
 
-.warn-panel h2 { color: var(--warn); }
+@utility brut-flat {
+  background-color: var(--color-surface);
+}
 
-.sev-critical { background: #4a1020; color: #ff8fa6; }
-.sev-high     { background: #4a2410; color: #ffb057; }
-.sev-medium   { background: #3d3a12; color: #e8dd6a; }
-.sev-low      { background: #14304a; color: #7fc4ff; }
-.sev-info     { background: #26263a; color: var(--muted); }
+/* Interactive cards lift toward the pointer and the shadow grows to match. */
+@utility brut-hover {
+  transition:
+    transform 120ms ease,
+    box-shadow 120ms ease,
+    border-color 120ms ease;
+
+  &:hover {
+    transform: translate(-2px, -2px);
+    box-shadow: 6px 6px 0 0 #1a1a26;
+    border-color: var(--color-fg-muted);
+  }
+}
+
+/* The primary action. Bright fill, black text, hard shadow — pressed states
+   move the button into its own shadow. */
+@utility brut-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border: 2px solid var(--color-ink);
+  box-shadow: 4px 4px 0 0 var(--color-ink);
+  background-color: var(--color-brand);
+  color: var(--color-ink);
+  font-family: var(--font-display);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  transition:
+    transform 100ms ease,
+    box-shadow 100ms ease;
+
+  &:hover:not(:disabled) {
+    transform: translate(-2px, -2px);
+    box-shadow: 6px 6px 0 0 var(--color-ink);
+  }
+  &:active:not(:disabled) {
+    transform: translate(4px, 4px);
+    box-shadow: 0 0 0 0 var(--color-ink);
+  }
+  &:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+    transform: none;
+  }
+}
+
+/* Same geometry, outlined — for anything that is not the page's main action. */
+@utility brut-btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border: 2px solid var(--color-line-strong);
+  background-color: transparent;
+  color: var(--color-fg);
+  font-family: var(--font-display);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  transition:
+    border-color 120ms ease,
+    color 120ms ease,
+    background-color 120ms ease;
+
+  &:hover:not(:disabled) {
+    border-color: var(--color-brand);
+    color: var(--color-brand);
+  }
+  &:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+}
+
+/* Bright fill + near-black text, the reference's badge treatment. */
+@utility chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border: 2px solid var(--color-ink);
+  padding: 0.1rem 0.45rem;
+  font-family: var(--font-display);
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  line-height: 1.4;
+  color: var(--color-ink);
+  white-space: nowrap;
+}
+
+/* Muted outlined variant for metadata that must not compete with severity. */
+@utility chip-ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border: 1px solid var(--color-line-strong);
+  padding: 0.1rem 0.45rem;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  line-height: 1.4;
+  color: var(--color-fg-muted);
+  white-space: nowrap;
+}
+
+/* Heavy display heading with the reference's underline stroke. */
+@utility display-heading {
+  font-family: var(--font-display);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: -0.01em;
+  line-height: 1.05;
+}
+
+/* ==========================================================================
+   Skeletons
+   ========================================================================== */
+
+/* The sweep is deliberately brighter than the surface it sits on: the report
+   skeleton is on screen for the whole scan, and at low contrast it reads as an
+   empty box rather than as something loading. */
+@utility skeleton {
+  background: linear-gradient(90deg, #191924 25%, #2a2a3d 50%, #191924 75%);
+  background-size: 200% 100%;
+  animation: skeleton-sweep 1.4s linear infinite;
+}
+
+@keyframes skeleton-sweep {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+@keyframes pulse-dot {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.2;
+  }
+}
+
+@utility live-pulse {
+  animation: pulse-dot 1.4s ease-in-out infinite;
+}
+
+/* Screen-reader-only, plus a skip link that becomes visible on focus. */
+@utility sr-only-focusable {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+
+  &:focus {
+    left: 0.5rem;
+    top: 0.5rem;
+    z-index: 100;
+    padding: 0.5rem 1rem;
+    background: var(--color-brand);
+    color: var(--color-ink);
+    font-weight: 800;
+  }
+}

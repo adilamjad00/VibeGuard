@@ -1,0 +1,106 @@
+import { countBySeverity, countBySource, sortBySeverity } from "@vibeguard/core";
+import type { Scan } from "@/lib/api";
+import { VERDICT_CHIP, VERDICT_COPY, VERDICT_TEXT } from "@/lib/ui";
+import { ScoreGauge } from "./ScoreGauge";
+import { SeverityBreakdown } from "./SeverityBreakdown";
+import { PartialScanBanner, ScannerCoverage } from "./ScannerCoverage";
+import { FindingCard } from "./FindingCard";
+import { ReportDownload } from "./ReportDownload";
+import { SectionHeading } from "./SectionHeading";
+
+/**
+ * The completed report.
+ *
+ * Order is deliberate: verdict, then score, then what was checked, then the
+ * findings. A judge or a developer should be able to stop reading after the
+ * first screen and still have the answer they came for.
+ */
+export function ScanReport({ scan }: { scan: Scan }) {
+  const findings = sortBySeverity(scan.findings);
+  const counts = countBySeverity(scan.findings);
+  const bySource = countBySource(scan.findings);
+  const failedScanners = scan.summary?.failedScanners ?? [];
+
+  // A scan can only reach `done` with a score and verdict, but the column is
+  // nullable, so this renders something sane rather than "null / 100".
+  const verdict = scan.verdict ?? "review";
+  const score = scan.score ?? 0;
+  const copy = VERDICT_COPY[verdict];
+
+  return (
+    <div className="space-y-6">
+      {failedScanners.length > 0 ? <PartialScanBanner failedScanners={failedScanners} /> : null}
+
+      {/* ── Verdict + score ─────────────────────────────────────────────── */}
+      <section aria-labelledby="verdict-heading" className="brut border-2 border-line-strong relative p-5 sm:p-7">
+        <div className="flex flex-col items-start gap-7 sm:flex-row sm:items-center">
+          <ScoreGauge score={score} verdict={verdict} />
+
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className={`chip ${VERDICT_CHIP[verdict]} px-2.5 py-1 text-sm`}>{verdict}</span>
+              <span className="font-mono text-[11px] uppercase tracking-wider text-fg-muted">
+                Ship readiness
+              </span>
+            </div>
+
+            <h2 id="verdict-heading" className={`display-heading mt-3 text-2xl ${VERDICT_TEXT[verdict]}`}>
+              {copy.headline}
+            </h2>
+            <p className="mt-2 max-w-2xl text-sm leading-relaxed text-fg-muted">{copy.body}</p>
+
+            <p className="mt-4 max-w-2xl border-l-2 border-line-strong pl-3 text-xs leading-relaxed text-fg-muted">
+              The score is deterministic — the same findings always produce the same number. It
+              starts at 100 and subtracts a weight per finding, with repeats of the same rule damped
+              so one noisy rule cannot bury everything else.
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-7 grid gap-6 border-t-2 border-line pt-6 lg:grid-cols-2">
+          <SeverityBreakdown counts={counts} total={scan.findings.length} />
+          <ScannerCoverage counts={bySource} failedScanners={failedScanners} />
+        </div>
+      </section>
+
+      {/* ── Findings ────────────────────────────────────────────────────── */}
+      <section aria-labelledby="findings-heading">
+        <SectionHeading
+          id="findings-heading"
+          align="left"
+          title={`${findings.length} finding${findings.length === 1 ? "" : "s"}`}
+          subtitle={
+            findings.length > 0
+              ? "Worst first. Criticals are expanded by default; every card carries the file, the line, why it matters and a fix you can copy."
+              : undefined
+          }
+        />
+
+        {findings.length === 0 ? (
+          <div className="brut border-2 border-line-strong p-8 text-center">
+            <p className="display-heading text-lg text-pass">Nothing found</p>
+            <p className="mx-auto mt-2 max-w-lg text-sm leading-relaxed text-fg-muted">
+              None of the scanners that ran reported an issue. That is not a proof of safety — it
+              means these specific checks came back clean.
+            </p>
+          </div>
+        ) : (
+          <ol className="grid gap-3">
+            {findings.map((finding, index) => (
+              <li key={finding.fingerprint || `${finding.title}-${index}`}>
+                <FindingCard finding={finding} index={index} />
+              </li>
+            ))}
+          </ol>
+        )}
+      </section>
+
+      <div className="flex flex-wrap items-center gap-3 border-t-2 border-line pt-5">
+        <ReportDownload scanId={scan.id} />
+        <span className="font-mono text-[11px] text-fg-muted">
+          Archived to private object storage · link expires shortly after signing
+        </span>
+      </div>
+    </div>
+  );
+}

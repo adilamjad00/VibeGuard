@@ -2,10 +2,10 @@
 ### The Zerops Challenge · Solo · 48h · Check off as you go
 
 ```
-Progress: [██████████████░░░░░░]  72%   ·   Phases 1–4 complete → Phase 5 next
+Progress: [█████████████████░░░]  86%   ·   Phases 1–5 complete → Phase 6 (ship) next
 ```
 
-> **You are here:** Phases 1–4 complete and verified against the live deployment. **Next: Phase 5 — polish, states, autoscaling.**
+> **You are here:** Phases 1–5 complete and verified against the live deployment. **FEATURES FROZEN. Next: Phase 6 — demo, README, post, SUBMIT.**
 >
 > **How to use this tracker**
 > - Tick each box as you finish it. Each phase's boxes ≈ that phase's % band.
@@ -25,7 +25,7 @@ Progress: [██████████████░░░░░░]  72%   
 | **2** | Thin end-to-end scan (1 real finding) | 15→35% | 35% | ✅ Done |
 | **3** | All scanners + LLM + score + S3 | 35→60% | **60%** | ✅ Done |
 | **4** | Live progress (Valkey pub/sub → WebSocket) | 60→72% | **72%** | ✅ Done |
-| **5** | Polish + UX + autoscaling | 72→86% | 86% | ⬜ |
+| **5** | Polish + UX + autoscaling | 72→86% | **86%** | ✅ Done |
 | **6** | Demo + README + post + **SUBMIT** | 86→100% | 100% | ⬜ |
 | 🎁 | Bonus (re-scan diff, etc.) | beyond | +bonus | ⬜ |
 
@@ -176,34 +176,61 @@ the correct sequence; a non-UUID id is rejected before it reaches a channel name
 
 ---
 
-## ⬜ Phase 5 — Polish + UX + autoscaling `(72 → 86%)`
-**Goal:** demo-grade. Intentional, no dead buttons, handles every state.
-**Est: ~3–4h.**
+## ✅ Phase 5 — Polish + UX + autoscaling `(72 → 86%)` — DONE
 
-**UI (shadcn/ui + Tailwind, dark mode default)**
-- [ ] `ScoreGauge` — big score + verdict badge, color-coded (red/amber/green), Framer Motion fill
-- [ ] `SeverityBreakdown` — counts by severity as chips
-- [ ] `FindingCard` — expandable: title, severity color, `file:line`, snippet, explanation, fix, **copy-fix button**
-- [ ] `RepoInput` — validation, loading state, an example-repo hint
-- [ ] Sort findings by severity (criticals first)
+**UI (Tailwind v4, dark mode default)**
+- [x] `ScoreGauge` — animated SVG arc + counting number, verdict-coloured, Framer Motion, `role="meter"`
+- [x] `SeverityBreakdown` — counts by severity as chips + a proportional bar
+- [x] `FindingCard` — native `<details>`: severity/source/category chips, `file:line`, snippet, explanation, fix, **copy-fix button**
+- [x] `RepoInput` — inline validation, loading state, demo-repo hint
+- [x] Findings sorted worst-first (criticals expanded by default)
+- [x] `ScannerCoverage` — per-scanner result, with **failed ≠ 0 findings**
 
-**States (judges notice these)**
-- [ ] Empty (no scan yet, with a prompt)
-- [ ] Loading skeletons
-- [ ] Live progress (from Phase 4)
-- [ ] Success (full report)
-- [ ] Partial (a scanner failed → banner, report still renders)
-- [ ] Error (clear message + retry)
+> **Deviation, on purpose: Tailwind v4 without shadcn/ui.** Nothing in this UI needs Radix — the
+> only disclosure widget is the finding expander, and native `<details>`/`<summary>` is keyboard
+> operable, announced as a disclosure, and findable by in-page search while collapsed. Stock shadcn
+> would also have fought the neo-brutalist direction the whole way. Framer Motion is used as
+> specified, for the gauge.
+
+**States**
+- [x] Empty (no scans yet → prompt back to the one action)
+- [x] Loading skeletons (`loading.tsx` + an inline report skeleton under live progress)
+- [x] Live progress (Phase 4's WebSocket, restyled as the pipeline rail)
+- [x] Success (full report)
+- [x] Partial (amber banner, "floor not a clean bill of health", report still renders)
+- [x] Error (API unreachable → retry; scan failed; 404; `error.tsx` boundary)
 
 **Quality pass**
-- [ ] Responsive at 1280px + mobile (you may demo on a shared screen)
-- [ ] Accessibility: semantic HTML, keyboard nav, ARIA live region on progress, contrast-safe severity colors
-- [ ] Remove all dead buttons + console errors
-- [ ] **Configure horizontal autoscaling on the `worker` service** (Zerops UI) — enables the scaling demo beat
-- [ ] Final seed-repo check: criticals guaranteed every run
-- [ ] Deploy; full click-through walkthrough; commit: "polish: UI, states, a11y, autoscaling"
+- [x] Responsive — no horizontal scroll at 1280 / 768 / 390 / 360px, verified in a real browser
+- [x] Accessibility — **axe-core: 0 WCAG 2.1 A/AA violations** on all four live pages
+- [x] Zero console errors/warnings on every page (the 404 page's own document 404 excepted)
+- [x] **Horizontal autoscaling declared for `worker`** (`minContainers: 1`, `maxContainers: 3`)
+- [x] Seed repo re-verified: score 36 / block / `failedScanners: []` / 6 findings, 6 explained
+- [x] Deployed; full click-through driven through the real UI in a headless browser
 
-**Done when:** the whole happy path looks intentional and every state is handled. → **FREEZE FEATURES.**
+**Evidence (live, `https://web-2adf-3000.prg1.zerops.app`)**
+
+```
+Browser-driven end-to-end (clicked the demo chip, then Scan repo):
+  → /scan/67a2b875-…      transport indicator: LIVE · WEBSOCKET
+  +0s   RUNNING SCANNERS
+  +16s  EXPLAINING FINDINGS
+  +26s  report rendered — 36 out of 100 — block
+  console issues: 0
+
+axe-core (wcag2a/aa, wcag21a/aa): home 0 · report 0 · partial 0 · failed 0
+hscroll @1280 and @390: none on any state
+tests: 58/58 (core 24 · api 15 · worker 19)
+```
+
+> **Bug caught by verification, not by reading.** The `brut` utility set the CSS `border`
+> shorthand, which Tailwind emitted *after* the generated colour utilities — silently overwriting
+> every `border-critical` / `border-high` / `border-l-*` back to the default line colour. The
+> severity stripe on finding cards and the red/amber tone on the failed and partial banners were
+> all inert. `brut` now carries surface + shadow only and borders are written at the call site.
+> Confirmed by computed style: critical card left border is `rgb(255,51,85)` at `6px`.
+
+**Done when:** the whole happy path looks intentional and every state is handled. → **FEATURES FROZEN.**
 
 ---
 

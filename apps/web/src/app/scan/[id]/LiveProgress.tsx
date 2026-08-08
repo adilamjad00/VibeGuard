@@ -5,9 +5,9 @@ import { useRouter } from "next/navigation";
 
 /** The phases a user sees, in order. Per-scanner ticks nest under "scanning". */
 const PHASES = [
-  { key: "cloning", label: "Cloning repository" },
-  { key: "scanning", label: "Running scanners" },
-  { key: "analyzing", label: "Explaining findings" },
+  { key: "cloning", label: "Cloning repository", detail: "Shallow clone into a disposable sandbox" },
+  { key: "scanning", label: "Running scanners", detail: "gitleaks · semgrep · osv-scanner" },
+  { key: "analyzing", label: "Explaining findings", detail: "Claude adds why-it-matters and a fix" },
 ] as const;
 
 const TERMINAL = new Set(["done", "failed"]);
@@ -120,37 +120,108 @@ export function LiveProgress({ scanId, initialStatus }: { scanId: string; initia
   const reachedIndex = indexOf(phase);
 
   return (
-    <>
-      <div className="panel">
-        <h2>Progress {live ? <span className="live-dot" aria-hidden /> : null}</h2>
-        <ol className="checks" aria-live="polite">
-          {PHASES.map((p, i) => {
-            const state = reachedIndex > i ? "done" : reachedIndex === i ? "active" : "pending";
+    <div className="space-y-5">
+      <section aria-labelledby="progress-heading" className="brut border-2 border-line-strong p-5 sm:p-6">
+        <div className="flex flex-wrap items-center gap-2.5">
+          <h2
+            id="progress-heading"
+            className="display-heading text-base text-fg"
+          >
+            Scan in progress
+          </h2>
+          <span className="chip-ghost">
+            <span
+              aria-hidden
+              className={`h-1.5 w-1.5 ${live ? "live-pulse bg-pass" : "bg-fg-muted"}`}
+            />
+            {live ? "live · websocket" : "polling"}
+          </span>
+        </div>
+
+        {/* The single announcement region for the whole pipeline. Polite so it
+            does not interrupt, and scoped to the phase list so a screen reader
+            hears each step once as it completes. */}
+        <ol
+          aria-live="polite"
+          aria-busy={reachedIndex < PHASES.length}
+          className="relative mt-6 ml-2 border-l-2 border-line-strong pl-6"
+        >
+          {PHASES.map((step, index) => {
+            const state =
+              reachedIndex > index ? "done" : reachedIndex === index ? "active" : "pending";
             return (
-              <li className="check" key={p.key}>
-                <span className={`dot ${state === "pending" ? "" : "ok"}`} />
-                <span className={`name phase-${state}`}>{p.label}</span>
-                {state === "active" ? <span className="hint">in progress…</span> : null}
+              <li key={step.key} className="relative pb-6 last:pb-0">
+                <span
+                  aria-hidden
+                  className={`absolute -left-7.75 top-1 h-3.5 w-3.5 border-2 border-ink ${
+                    state === "done"
+                      ? "bg-pass"
+                      : state === "active"
+                        ? "live-pulse bg-brand"
+                        : "bg-line-strong"
+                  }`}
+                />
+                <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                  <span
+                    className={`font-display text-sm font-bold uppercase tracking-wide ${
+                      state === "pending" ? "text-fg-muted" : "text-fg"
+                    }`}
+                  >
+                    {step.label}
+                  </span>
+                  <span className="font-mono text-[11px] uppercase tracking-wider text-fg-muted">
+                    {state === "done" ? "done" : state === "active" ? "running…" : "waiting"}
+                  </span>
+                </div>
+                <p className="mt-1 text-xs leading-relaxed text-fg-muted">{step.detail}</p>
               </li>
             );
           })}
         </ol>
-      </div>
+      </section>
 
       {log.length > 0 ? (
-        <div className="panel">
-          <h2>Activity</h2>
-          <div className="checks">
-            {log.map((entry, i) => (
-              <div className="check" key={`${entry.phase}-${i}`}>
-                <span className="name">{entry.phase}</span>
-                <span className="value">{entry.message ?? ""}</span>
-              </div>
+        <section aria-labelledby="activity-heading" className="brut border-2 border-line-strong p-5 sm:p-6">
+          <h2
+            id="activity-heading"
+            className="font-display text-[11px] font-extrabold uppercase tracking-[0.14em] text-fg-muted"
+          >
+            Activity
+          </h2>
+          <ul className="mt-3 grid gap-1.5 font-mono text-xs">
+            {log.map((entry, index) => (
+              <li key={`${entry.phase}-${index}`} className="flex flex-wrap gap-x-3">
+                <span className="text-brand">{entry.phase}</span>
+                <span className="text-fg-muted">{entry.message ?? ""}</span>
+              </li>
             ))}
-          </div>
-        </div>
+          </ul>
+        </section>
       ) : null}
-    </>
+
+      {/* What the report will look like once the pipeline finishes. */}
+      <ReportSkeleton />
+    </div>
+  );
+}
+
+function ReportSkeleton() {
+  return (
+    <div aria-hidden className="brut border-2 border-line-strong p-5 sm:p-7">
+      <div className="flex flex-col items-start gap-7 sm:flex-row sm:items-center">
+        <div className="skeleton h-42 w-42 shrink-0 rounded-full" />
+        <div className="w-full flex-1 space-y-3">
+          <div className="skeleton h-5 w-24" />
+          <div className="skeleton h-7 w-56" />
+          <div className="skeleton h-4 w-full max-w-md" />
+          <div className="skeleton h-4 w-full max-w-sm" />
+        </div>
+      </div>
+      <div className="mt-7 grid gap-3 border-t-2 border-line pt-6 sm:grid-cols-2">
+        <div className="skeleton h-10" />
+        <div className="skeleton h-10" />
+      </div>
+    </div>
   );
 }
 

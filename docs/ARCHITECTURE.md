@@ -395,3 +395,54 @@ frame arrives within 4s, polling takes over.
 **Publishing is fire-and-forget.** Progress is a cosmetic overlay on a pipeline whose real state
 lives in Postgres, so a Valkey blip degrades the animation and nothing else. The same function that
 publishes also writes the `scan_events` row, so the live stream and the replay log cannot disagree.
+
+---
+
+## Phase 5 — the interface, and the decisions that shaped it
+
+**Tailwind v4, no component library.** The roadmap said shadcn/ui. Nothing in this UI needs Radix:
+the only disclosure widget is the finding expander, and native `<details>`/`<summary>` is keyboard
+operable, announced as a disclosure, and findable by the browser's in-page search *while collapsed* —
+none of which a rebuilt accordion gets for free. There are no modals, dropdowns or popovers. Tailwind
+v4 also needs no `tailwind.config.js`; the design tokens live in `@theme` in `globals.css` next to the
+utilities that use them.
+
+**Two colour scales that are never allowed to meet.** Brand accents (orange, cyan, violet, lime) are
+chrome only — nav, CTAs, decorative markers, scanner identity. The severity ramp (red → amber → yellow
+→ blue → grey) appears only inside findings. Brand orange and `high` amber are adjacent hues, so they
+are kept in separate contexts and every severity chip carries its uppercase label: colour is never the
+only carrier of meaning. All values are contrast-checked against the page background, and axe-core
+reports zero WCAG 2.1 A/AA violations across the live pages.
+
+**"Failed" and "0 findings" are different words on the screen.** `ScannerCoverage` renders a scanner
+that crashed as `FAILED`, never as a clean zero, and a partial report opens with an amber banner
+saying the score is a floor rather than a clean bill of health. This is the security invariant from
+the pipeline made visible — a UI that renders a missing check as a passing one would undo it.
+
+**The score is explained where it is shown.** Under the gauge is one sentence on how the number is
+produced (starts at 100, subtracts a weight per finding, repeats of the same rule damped). A judge
+asking "where does 36 come from?" should not have to open the source.
+
+**The gauge is a `meter`, not a picture.** The SVG arc is `aria-hidden`; the element carries
+`role="meter"` with `aria-valuenow` and an `aria-valuetext` of `"36 out of 100 — block"`. Reduced
+motion renders the final state immediately instead of animating.
+
+**Client-side URL validation is a convenience, not a control.** `RepoInput` catches obvious mistakes
+without a round trip, but `validateRepoUrl()` on the API remains the SSRF boundary and rejects
+anything that slips past. The comment in the component says so, because the next person to touch it
+will be tempted to treat it as the check.
+
+**A CSS bug that only a browser could catch.** The `brut` utility originally set the CSS `border`
+shorthand. Tailwind emits custom utilities after the generated colour utilities, so that shorthand
+silently overwrote every `border-critical`, `border-high` and `border-l-*` back to the default line
+colour — the severity stripe on finding cards and the tone on the failed and partial banners were all
+inert, and the markup gave no hint of it. `brut` now carries surface and shadow only; borders are
+written at the call site where Tailwind's own ordering applies. Verified by reading the computed
+style off the deployed page, not by reading the source.
+
+**Worker horizontal autoscaling.** Scans are queued work with no in-process state carried between
+jobs, so replicas translate directly into throughput: BullMQ hands each container a different job.
+`minContainers: 1` idles cheaply, `maxContainers: 3` absorbs a burst of concurrent submissions
+without a queue backlog. Declared in `zerops-project-import.yml`; applied to the live project through
+the GUI rather than the platform API, after an earlier API write cleared the autoscaling config as a
+side effect of nulls in the payload.
