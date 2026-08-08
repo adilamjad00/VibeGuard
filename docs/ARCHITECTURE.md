@@ -334,3 +334,64 @@ thing this control exists to prevent.
 **Test scripts now compile before running.** They executed `node --test dist/*.test.js` without
 building, so a green run could be validating stale JavaScript from an earlier build — a test suite
 that cannot fail is worse than no test suite.
+
+**`--max-memory` on semgrep was self-inflicted.** Diagnosing an intermittent semgrep failure as an
+OOM, we added `--max-memory 768`. That caps semgrep-*core*'s own budget, so the process aborted
+during rule validation and reported `RPC subprocess exited with code 1`. Raising the container to
+2 GB changed nothing, because the limit was in the command rather than the cgroup — which is the
+tell: if more RAM does not help, the constraint is not RAM. Removing the flag restored the scanner.
+The container's memory floor is the right place to bound this; a flag that converts memory pressure
+into a hard failure is not.
+
+---
+
+## Phase 4 — live progress, and why it is a WebSocket rather than SSE
+
+The worker publishes each phase to the Valkey channel `scan:{id}`; the api relays it to the browser.
+Everything below `openScanFeed()` is transport-agnostic.
+
+**Ordering is the subtle part: subscribe first, then replay, then flush.** The intuitive order —
+read `scan_events`, then subscribe — silently drops any event published in the gap between the two,
+which is exactly when a fast scan emits them. So the feed subscribes and buffers, replays history,
+then flushes the buffer, deduplicating on `(phase, message)`. Replay is also what lets a client that
+connects *after* the scan finished still receive the whole story and an immediate terminal event.
+
+**The api's subscriber is a dedicated connection.** A Valkey connection in subscriber mode refuses
+ordinary commands, and the existing client answers `/healthz`'s `PING` and backs the rate limiter;
+sharing it would break both. One connection is multiplexed across all viewers and reference counted
+per scan — first listener subscribes, last one out unsubscribes. Verified live: three concurrent
+clients on one scan report `activeStreams: 1`, returning to `0` on disconnect. That count is exposed
+on `/healthz` precisely so "it unsubscribes on disconnect" is measurable rather than asserted.
+
+**SSE is correct and was still the wrong transport here.** Zerops' shared L7 balancer runs
+`proxy_buffering on`, which holds an entire response until it ends — measured at 40–66s, i.e. the
+whole scan, turning live progress into a single burst at the end. nginx's own
+`dev-zerops-l7balancer-out` header is stamped 66 seconds before curl receives it, and an httpbin
+control streamed normally, so it is the platform and not the client.
+
+It cannot be turned off for a `*.zerops.app` subdomain, established four ways: the routing entries
+report `isEditable: false`; the per-location config schema accepts only
+`accessPolicy · basicAuth · content · rateLimiting · redirect`; grepping the full 828 KB OpenAPI
+spec for `buffering|buffer_size|send_timeout` returns nothing at any scope; and the project
+(`LIGHT`, `publicIpV4: None`, shared IPv4) exposes no HTTP Balancer section. A custom domain was
+rejected as a fix because no documentation promises it changes this — it would have been a purchase
+against an unverified assumption.
+
+**A WebSocket sidesteps the mechanism rather than fighting it.** Once a connection is upgraded it is
+a tunnel, not a buffered response body, so `proxy_buffering` does not apply. Measured over the
+browser's real path (web origin → Next rewrite → api): frames at **+1.0s, +16.7s, +26.2s** against a
+26-second scan. Next's rewrite proxies the upgrade correctly, so this stays same-origin with no CORS
+surface and no public API hostname in the frontend.
+
+Both transports share `scan-feed.ts`, so they cannot drift; the SSE endpoint is kept because it is
+the right implementation behind any proxy that does not buffer, and `curl -N` against it is still
+the clearest way to demonstrate the pipeline.
+
+**The client treats silence as failure.** A buffering proxy does not raise an error — it accepts the
+connection and goes quiet — so `onerror` never fires. Without a stall detector the page would sit
+frozen on "Cloning" until the scan ended, which is worse than the meta-refresh it replaced. If no
+frame arrives within 4s, polling takes over.
+
+**Publishing is fire-and-forget.** Progress is a cosmetic overlay on a pipeline whose real state
+lives in Postgres, so a Valkey blip degrades the animation and nothing else. The same function that
+publishes also writes the `scan_events` row, so the live stream and the replay log cannot disagree.

@@ -2,10 +2,10 @@
 ### The Zerops Challenge · Solo · 48h · Check off as you go
 
 ```
-Progress: [████████████░░░░░░░░]  60%   ·   Phases 1–3 complete → Phase 4 next
+Progress: [██████████████░░░░░░]  72%   ·   Phases 1–4 complete → Phase 5 next
 ```
 
-> **You are here:** Phases 1, 2 and 3 audited against the live deployment and complete. **Next: Phase 4 — live progress via Valkey pub/sub + SSE.**
+> **You are here:** Phases 1–4 complete and verified against the live deployment. **Next: Phase 5 — polish, states, autoscaling.**
 >
 > **How to use this tracker**
 > - Tick each box as you finish it. Each phase's boxes ≈ that phase's % band.
@@ -24,7 +24,7 @@ Progress: [████████████░░░░░░░░]  60%   
 | **1** | Empty-but-wired deploy | 5→15% | **15%** | ✅ Done |
 | **2** | Thin end-to-end scan (1 real finding) | 15→35% | 35% | ✅ Done |
 | **3** | All scanners + LLM + score + S3 | 35→60% | **60%** | ✅ Done |
-| **4** | Live progress (SSE) | 60→72% | 72% | ⬜ |
+| **4** | Live progress (Valkey pub/sub → WebSocket) | 60→72% | **72%** | ✅ Done |
 | **5** | Polish + UX + autoscaling | 72→86% | 86% | ⬜ |
 | **6** | Demo + README + post + **SUBMIT** | 86→100% | 100% | ⬜ |
 | 🎁 | Bonus (re-scan diff, etc.) | beyond | +bonus | ⬜ |
@@ -132,24 +132,47 @@ accounted for 63% of the penalty. Fixed in the **fixture**, not the scorer: `exp
 weights were never touched. Removing the committed secrets takes the score to **80 / pass**, so the
 before/after beat crosses the verdict boundary.
 
-**Still open (deliberately, not a Phase 3 criterion):** raising worker RAM would let semgrep run a
-wider ruleset. `zcli` has no autoscaling command and the API rejects the CLI token for it, so this
-needs the GUI.
+**Two corrections to earlier notes here.** semgrep's intermittent failure was **not** memory: it was
+a `--max-memory 768` flag we had added while mis-diagnosing an OOM, which capped semgrep-core and
+made it abort during rule validation. Raising the worker to 2 GB changed nothing — the tell that the
+constraint was never RAM — and removing the flag fixed it. Separately, the Zerops API does **not**
+reject the CLI token; we were reading `token` from `cli.data` when the field is `Token`, so an empty
+string was being sent.
 
 ---
 
-## ⬜ Phase 4 — Live progress (SSE) `(60 → 72%)`
-**Goal:** watch the scan advance live — the watchable demo beat.
-**Est: ~3h.**
+## ✅ Phase 4 — Live progress `(60 → 72%)` — DONE
 
-- [ ] Worker publishes phase events to Valkey channel `scan:{id}` at each step (`cloning` → `scanning:gitleaks` → `scanning:semgrep` → `analyzing` → `done`) + optionally write `scan_events` rows
-- [ ] `GET /scans/:id/stream` — SSE endpoint: subscribe to `scan:{id}`, relay events, clean up on client disconnect
-- [ ] Frontend opens an `EventSource` on `/scan/[id]`, shows a live phase list / progress bar
-- [ ] Handle the edge case: if the scan already finished before the client connects, fetch current status first, then stream
-- [ ] Handle reconnection gracefully
-- [ ] Deploy; confirm live; commit: "feat: live scan progress via Valkey pub/sub + SSE"
+- [x] Worker publishes phase events to Valkey `scan:{id}` (`cloning → scanning → scanning:<tool> → analyzing → done`) **and** writes `scan_events` rows
+- [x] `GET /scans/:id/stream` — SSE: subscribe, relay, clean up on disconnect
+- [x] `GET /scans/:id/ws` — **the transport the browser actually uses** (see below)
+- [x] Frontend shows a live phase list, driven by the socket
+- [x] Late joiner: a client connecting after the scan finished replays everything and closes immediately
+- [x] Reconnection/degradation: polling fallback with a 4s stall detector
 
-**Done when:** starting a scan shows phases updating in real time, ending on the full report.
+**Verification evidence (live, browser path: web origin → Next rewrite → api)**
+
+```
++ 1.0s  [open] upgraded to websocket
++ 1.0s  cloning / scanning            (replayed)
++16.7s  scanning:gitleaks 4 · scanning:semgrep 1 · scanning:osv 1
++26.2s  done — score 36, verdict block
++26.4s  [close]
+```
+
+Frames spread across the scan, **not** one burst at the end. Also verified: `activeStreams` goes
+1 → 0 (3 concurrent clients on one scan = 1 multiplexed subscription); the SSE endpoint still emits
+the correct sequence; a non-UUID id is rejected before it reaches a channel name; `/healthz`,
+`GET /scans/:id` and `/report` unchanged; 47/47 tests.
+
+> **Why WebSocket and not SSE.** Zerops' shared L7 balancer runs `proxy_buffering on`, holding a
+> whole SSE response until it ends (measured 40–66s — the entire scan). It **cannot** be disabled for
+> a `*.zerops.app` subdomain: routing entries are `isEditable: false`, the per-location schema has no
+> buffering key, the full OpenAPI spec has no buffering setting at any scope, and this `LIGHT` project
+> on a shared IPv4 exposes no HTTP Balancer section. An upgraded WebSocket is a tunnel, not a buffered
+> response, so it is unaffected. A custom domain was rejected as a fix: nothing documents that it
+> changes this, so it would have been a purchase against an unverified assumption. SSE is kept —
+> it is correct behind any non-buffering proxy, and `curl -N` on it is the clearest demo of the pipeline.
 
 ---
 
