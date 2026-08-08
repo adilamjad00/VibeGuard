@@ -3,6 +3,7 @@ import type { NormalizedFinding, ScanStatus, Verdict } from "@vibeguard/core";
 import { getPool } from "../db.js";
 import { enqueueScan } from "../queue.js";
 import { validateRepoUrl } from "../repo-url.js";
+import { presignReport, REPORT_URL_TTL_SECONDS } from "../s3.js";
 
 interface ScanRow {
   id: string;
@@ -84,6 +85,37 @@ export async function scanRoutes(app: FastifyInstance) {
       completedAt: scan.completed_at,
       findings: findings.rows.map(toFinding),
     });
+  });
+
+  /**
+   * A short-lived presigned link to the archived report in object storage.
+   *
+   * The bucket is private and stays private; this hands out a time-limited URL
+   * rather than making the object readable, so the S3 leg of the pipeline is
+   * demonstrable without loosening the bucket policy that protects everyone
+   * else's reports.
+   */
+  app.get("/scans/:id/report", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    if (!isUuid(id)) return reply.code(400).send({ error: "invalid scan id" });
+
+    const { rows } = await getPool().query<{ report_object_key: string | null }>(
+      `select report_object_key from scans where id = $1`,
+      [id],
+    );
+    const scan = rows[0];
+    if (!scan) return reply.code(404).send({ error: "scan not found" });
+    if (!scan.report_object_key) {
+      return reply.code(404).send({ error: "no archived report for this scan" });
+    }
+
+    try {
+      const url = await presignReport(scan.report_object_key);
+      return reply.send({ url, expiresInSeconds: REPORT_URL_TTL_SECONDS });
+    } catch (err) {
+      req.log.error({ err, id }, "failed to presign report");
+      return reply.code(503).send({ error: "could not generate report link" });
+    }
   });
 
   /** Recent scans, for the landing page. */

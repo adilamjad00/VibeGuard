@@ -1,4 +1,5 @@
-import { S3Client } from "@aws-sdk/client-s3";
+import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { config, require_ } from "./env.js";
 
 let client: S3Client | undefined;
@@ -25,4 +26,13 @@ export function getS3(): S3Client {
 
 export function getBucket(): string {
   return config.s3.bucket ?? require_("S3_BUCKET");
+}
+
+/** Long enough to click through from the report page, short enough not to leak. */
+export const REPORT_URL_TTL_SECONDS = 300;
+
+export async function presignReport(key: string): Promise<string> {
+  return getSignedUrl(getS3(), new GetObjectCommand({ Bucket: getBucket(), Key: key }), {
+    expiresIn: REPORT_URL_TTL_SECONDS,
+  });
 }

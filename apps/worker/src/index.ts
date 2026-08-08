@@ -1,6 +1,7 @@
 import { Worker, type Job } from "bullmq";
 import { checkScannerTools } from "./toolcheck.js";
 import { runScan, type ScanJob } from "./pipeline.js";
+import { isLlmConfigured } from "./llm.js";
 import { closePool } from "./db.js";
 
 const connection = {
@@ -13,6 +14,15 @@ const connection = {
 };
 
 await checkScannerTools();
+
+// Same reasoning as the scanner probe: whether the key reached the container is
+// otherwise invisible until a scan quietly comes back without explanations.
+// Reports presence only — the value is never logged.
+console.log(
+  isLlmConfigured()
+    ? "[llm] LLM_API_KEY present — findings will be explained"
+    : "[llm] LLM_API_KEY not set — findings will have no explanations (supported)",
+);
 
 async function processScan(job: Job<ScanJob>) {
   console.log(`[worker] received job ${job.id}`, job.data);

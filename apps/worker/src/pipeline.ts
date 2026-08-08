@@ -1,11 +1,15 @@
 import type { NormalizedFinding, ScanStatus } from "@vibeguard/core";
 import { shipReadinessScore, summarize, verdictFor } from "@vibeguard/core";
 import { gitleaksAdapter } from "./adapters/gitleaks.js";
+import { semgrepAdapter } from "./adapters/semgrep.js";
+import { osvAdapter } from "./adapters/osv.js";
 import { cloneRepo } from "./clone.js";
 import { getPool } from "./db.js";
+import { enrichFindings } from "./llm.js";
+import { storeReport } from "./storage.js";
 
-/** Adapters run in order; adding a scanner means adding to this list. */
-const ADAPTERS = [gitleaksAdapter];
+/** Adding a scanner means adding to this list; they run concurrently. */
+const ADAPTERS = [gitleaksAdapter, semgrepAdapter, osvAdapter];
 
 export interface ScanJob {
   scanId: string;
@@ -28,19 +32,33 @@ export async function runScan(job: ScanJob): Promise<void> {
     await setStatus(scanId, "scanning");
     const findings: NormalizedFinding[] = [];
     const failedScanners: string[] = [];
-    for (const adapter of ADAPTERS) {
-      const started = Date.now();
-      try {
+
+    // allSettled, deliberately not Promise.all. Promise.all rejects the whole
+    // batch the moment one scanner throws, discarding the results of the two
+    // that succeeded — which would turn one broken tool into a failed scan and
+    // break the partial-report guarantee below.
+    const settled = await Promise.allSettled(
+      ADAPTERS.map(async (adapter) => {
+        const started = Date.now();
         const found = await adapter.run({ repoPath: repo.path, scanId });
-        findings.push(...found);
-        console.log(`[scan ${scanId}] ${adapter.name}: ${found.length} findings in ${Date.now() - started}ms`);
-      } catch (err) {
+        return { adapter, found, ms: Date.now() - started };
+      }),
+    );
+
+    for (const [i, outcome] of settled.entries()) {
+      const adapter = ADAPTERS[i]!;
+      if (outcome.status === "fulfilled") {
+        findings.push(...outcome.value.found);
+        console.log(
+          `[scan ${scanId}] ${adapter.name}: ${outcome.value.found.length} findings in ${outcome.value.ms}ms`,
+        );
+      } else {
         // One broken scanner degrades coverage; it does not fail the scan.
         // A partial report is worth more than no report — but the gap is
         // recorded and surfaced, never presented as a clean result.
         failedScanners.push(adapter.name);
-        console.error(`[scan ${scanId}] ${adapter.name} failed:`, message(err));
-        await recordEvent(scanId, "scanning", `${adapter.name} failed: ${message(err)}`);
+        console.error(`[scan ${scanId}] ${adapter.name} failed:`, message(outcome.reason));
+        await recordEvent(scanId, "scanning", `${adapter.name} failed: ${message(outcome.reason)}`);
       }
     }
 
@@ -51,20 +69,40 @@ export async function runScan(job: ScanJob): Promise<void> {
     }
 
     const deduped = dedupe(findings.map((f) => relativize(f, repo.path)));
-    await persistFindings(scanId, deduped);
 
     // The score is computed from the static findings only, by the pure function
-    // in packages/core. Nothing downstream — including the LLM pass added in
-    // Phase 3 — is allowed to move it.
+    // in packages/core, and it is computed BEFORE the LLM ever sees the code.
+    // Deriving it here makes it structurally impossible for the enrichment pass
+    // to influence the verdict — a repo cannot talk its way to a better score.
     const score = shipReadinessScore(deduped);
     const verdict = verdictFor(score);
     const summary = { ...summarize(deduped), failedScanners };
 
+    await setStatus(scanId, "analyzing");
+    const { enriched } = await enrichFindings(deduped, repo.path);
+
+    await persistFindings(scanId, enriched);
+
+    // Archived after the findings are safely in Postgres, so a storage outage
+    // costs the archive and nothing else.
+    const reportKey = await storeReport({
+      scanId,
+      repoUrl,
+      commitSha: repo.commitSha,
+      score,
+      verdict,
+      summary: summarize(deduped),
+      failedScanners,
+      findings: enriched,
+      generatedAt: new Date().toISOString(),
+    });
+
     await getPool().query(
       `update scans
-          set status = 'done', score = $1, verdict = $2, summary = $3, completed_at = now()
-        where id = $4`,
-      [score, verdict, JSON.stringify(summary), scanId],
+          set status = 'done', score = $1, verdict = $2, summary = $3,
+              report_object_key = $4, completed_at = now()
+        where id = $5`,
+      [score, verdict, JSON.stringify(summary), reportKey, scanId],
     );
     console.log(
       `[scan ${scanId}] done: score=${score} verdict=${verdict} findings=${deduped.length}` +
@@ -107,14 +145,47 @@ function relativize(finding: NormalizedFinding, repoPath: string): NormalizedFin
   return { ...finding, filePath, fingerprint };
 }
 
-/** Two scanners can flag the same line; the fingerprint decides identity. */
-function dedupe(findings: NormalizedFinding[]): NormalizedFinding[] {
-  const seen = new Map<string, NormalizedFinding>();
+/** Lower wins when two scanners report the same problem. */
+const SOURCE_PRIORITY: Record<string, number> = { gitleaks: 0, semgrep: 1, osv: 2, llm: 3 };
+
+/**
+ * Collapses duplicate findings.
+ *
+ * Two passes, because scanners duplicate each other in two different ways.
+ * Within one scanner the fingerprint is authoritative. *Across* scanners it is
+ * useless — gitleaks and semgrep's `p/secrets` flag the same committed key and
+ * produce completely different fingerprints, so keying on fingerprint alone
+ * stores that one secret twice and charges the score for it twice.
+ *
+ * The second pass therefore treats (file, line, category) as the identity of a
+ * problem, and keeps the report from the more specific tool. Dependency
+ * findings are exempt: they have no line, so several CVEs against one lockfile
+ * would otherwise collapse into one.
+ */
+export function dedupe(findings: NormalizedFinding[]): NormalizedFinding[] {
+  const byFingerprint = new Map<string, NormalizedFinding>();
   for (const f of findings) {
     const key = f.fingerprint || `${f.source}:${f.filePath}:${f.lineStart}:${f.title}`;
-    if (!seen.has(key)) seen.set(key, f);
+    if (!byFingerprint.has(key)) byFingerprint.set(key, f);
   }
-  return [...seen.values()];
+
+  const byLocation = new Map<string, NormalizedFinding>();
+  const unlocated: NormalizedFinding[] = [];
+  for (const f of byFingerprint.values()) {
+    if (!f.filePath || f.lineStart === undefined || f.category === "dependency") {
+      unlocated.push(f);
+      continue;
+    }
+    const key = `${f.filePath}:${f.lineStart}:${f.category}`;
+    const existing = byLocation.get(key);
+    if (!existing || priority(f) < priority(existing)) byLocation.set(key, f);
+  }
+
+  return [...byLocation.values(), ...unlocated];
+}
+
+function priority(f: NormalizedFinding): number {
+  return SOURCE_PRIORITY[f.source] ?? 99;
 }
 
 async function persistFindings(scanId: string, findings: NormalizedFinding[]): Promise<void> {
