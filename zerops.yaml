@@ -57,6 +57,9 @@ zerops:
       base: nodejs@22
       buildCommands:
         - npm ci
+        # core is in web's deployFiles, so it has to be built here too —
+        # deployFiles fails the build outright if a listed target is missing.
+        - npm run build -w @vibeguard/core
         - npm run build -w @vibeguard/web
       deployFiles:
         - apps/web/.next

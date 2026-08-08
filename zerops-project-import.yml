@@ -1,10 +1,11 @@
-# Paste into: Zerops dashboard -> Import project, or run:
+# Complete, reproducible definition of the VibeGuard project.
+#
 #   zcli project project-import zerops-project-import.yml
 #
-# Creates only the three managed services. The code services (api / web / worker)
-# are added afterwards and pointed at this repo's zerops.yaml.
-#
-# Everything here stays private — no service in this file sets enableSubdomainAccess.
+# The live project was bootstrapped from the managed-services half of this file;
+# the three code services were then added with `zcli service create --name <x>`,
+# which reads their type from zerops.yaml. Both routes produce the same result —
+# this file is the one to use when recreating the project from scratch.
 #
 # Service type syntax: the per-service docs advertise `postgresql:single@16` and
 # call the standalone `mode` field deprecated, but the import reference still
@@ -15,19 +16,26 @@ project:
   name: vibeguard
 
 services:
+  # ───────────────────────── managed services (private) ─────────────────────────
   - hostname: db
     type: postgresql@16
     mode: NON_HA
     # Default would be oltp-staging. A 48-hour demo does not need that headroom,
     # and the profile is changeable in the GUI at any time.
     profile: oltp-hobby
-    priority: 1
+    priority: 10
 
   - hostname: valkey
     type: valkey@7.2
     mode: NON_HA
     profile: hobby
-    priority: 1
+    profileOverrides:
+      # Zerops defaults Valkey to allkeys-lru, which is right for a cache and
+      # wrong for a job queue: under memory pressure it would evict BullMQ job
+      # data and silently drop queued scans. BullMQ warns about this on every
+      # connection. noeviction makes a full queue fail loudly instead.
+      maxmemory-policy: noeviction
+    priority: 10
 
   - hostname: storage
     type: object-storage
@@ -38,4 +46,30 @@ services:
     # channel. The api and worker authenticate with the generated S3 credentials,
     # so nothing needs public access.
     objectStoragePolicy: private
+    priority: 10
+
+  # ───────────────────────── code services ─────────────────────────
+  # Built and deployed from zerops.yaml (setups: api / web / worker).
+  # Lower priority so the managed services exist first — otherwise the
+  # ${db_*} / ${valkey_*} / ${storage_*} references have nothing to resolve to.
+  - hostname: api
+    type: nodejs@22
+    enableSubdomainAccess: true
+    priority: 1
+
+  - hostname: web
+    type: nodejs@22
+    enableSubdomainAccess: true
+    priority: 1
+
+  - hostname: worker
+    type: nodejs@22
+    # No subdomain: the worker clones arbitrary public repositories and must
+    # have no public ingress.
+    verticalAutoscaling:
+      # Observed in production: the default floor (0.12 GB) OOM-killed the
+      # container seconds after startup. Node plus the deployed artefact needs
+      # more, and semgrep needs substantially more again once scans run.
+      minRam: 1
+      maxRam: 6
     priority: 1

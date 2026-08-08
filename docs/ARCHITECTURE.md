@@ -163,6 +163,24 @@ notice, and Zerops' own maintained recipes (`recipe-deno`, `recipe-payload`) use
 verbatim today. When first-party docs contradict each other, the code that is actually deploying
 wins. Revisit if an import ever fails on it.
 
+**Object storage is not on the private network.** `storage_apiUrl` resolves to
+`https://storage-prg1.zerops.io` — a shared, public MinIO endpoint reached over TLS with the
+generated credentials, not an in-project hostname like `db` or `valkey`. So the "everything except
+web and api is private" story has one honest exception: the *bucket* is private
+(`objectStoragePolicy: private`), but the *endpoint* is public and access is credential-gated
+rather than network-gated. Worth stating plainly rather than overclaiming the topology.
+
+**Valkey is forced to `noeviction`.** Zerops defaults Valkey to `allkeys-lru`, which is correct for
+a cache and actively wrong for a job queue: under memory pressure it evicts whatever it likes,
+including BullMQ's job data, silently losing queued scans. BullMQ warns about this on every
+connection. `profileOverrides: maxmemory-policy: noeviction` makes a full queue fail loudly instead
+of quietly dropping work.
+
+**The worker needs `minRam: 1`.** The default vertical-autoscaling floor is 0.12 GB, and the first
+worker container was OOM-killed seconds after reaching `ready`. Node plus the deployed artefact
+does not fit, and semgrep will need considerably more once real scans run. Found only because the
+container died on a live deploy — no amount of local testing would have surfaced it.
+
 **Config errors surface as degraded health, never as a failed boot.** `env.ts` collects missing
 variables instead of throwing, and a failed migration is logged and stepped over rather than
 aborting startup. A crash-looping service shows a dead URL and explains nothing; a live service

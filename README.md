@@ -66,4 +66,11 @@ No secrets are ever committed; every value comes from a Zerops service variable.
 
 ## Status
 
-Phase 1 — wired skeleton deployed, health checks green.
+**Phase 1 complete — deployed and verified on Zerops.**
+
+- API: https://api-2adf-3001.prg1.zerops.app/healthz → `{"status":"ok","db":"ok","valkey":"ok","s3":"ok"}`
+- Web: https://web-2adf-3000.prg1.zerops.app
+- Worker: private, attached to the queue, with all three scanners installed
+  (semgrep 1.172.0, gitleaks 8.30.1, osv-scanner 2.5.0).
+
+Next: Phase 2 — `POST /scans`, shallow clone, gitleaks pass, score, `/scan/[id]`.
