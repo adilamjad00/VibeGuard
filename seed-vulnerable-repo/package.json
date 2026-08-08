@@ -1,0 +1,10 @@
+{
+  "name": "totally-legit-ai-app",
+  "version": "1.0.0",
+  "description": "Deliberately vulnerable demo app. Do not deploy. Do not reuse.",
+  "main": "src/server.js",
+  "dependencies": {
+    "express": "4.18.2",
+    "lodash": "4.17.11"
+  }
+}
