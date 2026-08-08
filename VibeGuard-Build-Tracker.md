@@ -204,7 +204,11 @@ the correct sequence; a non-UUID id is rejected before it reaches a channel name
 - [x] Responsive — no horizontal scroll at 1280 / 768 / 390 / 360px, verified in a real browser
 - [x] Accessibility — **axe-core: 0 WCAG 2.1 A/AA violations** on all four live pages
 - [x] Zero console errors/warnings on every page (the 404 page's own document 404 excepted)
-- [x] **Horizontal autoscaling declared for `worker`** (`minContainers: 1`, `maxContainers: 3`)
+- [~] **Horizontal autoscaling for `worker`** — declared in `zerops-project-import.yml`
+      (`minContainers: 1`, `maxContainers: 3`). **Still to apply on the live project via the GUI:**
+      worker → *Automatic scaling configuration* → containers min 1 / max 3. Not applied through the
+      platform API on purpose: an earlier API write cleared the autoscaling config as a side effect
+      of nulls in the payload.
 - [x] Seed repo re-verified: score 36 / block / `failedScanners: []` / 6 findings, 6 explained
 - [x] Deployed; full click-through driven through the real UI in a headless browser
 
