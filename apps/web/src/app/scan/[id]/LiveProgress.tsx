@@ -12,6 +12,13 @@ const PHASES = [
 
 const TERMINAL = new Set(["done", "failed"]);
 
+/**
+ * How long to wait for the first event before assuming the stream is being
+ * buffered somewhere and falling back to polling. Replayed history arrives
+ * immediately on connect, so a healthy stream always beats this comfortably.
+ */
+const STALL_TIMEOUT_MS = 4000;
+
 interface Event {
   phase: string;
   message?: string | null;
@@ -62,9 +69,18 @@ export function LiveProgress({ scanId, initialStatus }: { scanId: string; initia
       }, 3000);
     };
 
+    // A buffering reverse proxy does not error — it accepts the connection and
+    // holds every byte until the response ends, so `onerror` never fires and
+    // the page would sit frozen on "Cloning" until the scan finished. Measured
+    // on this deployment: nginx held the whole stream for 66s. So silence is
+    // treated as failure too, and polling starts if nothing arrives promptly.
+    const stall = setTimeout(startPolling, STALL_TIMEOUT_MS);
+
     source.onopen = () => setLive(true);
 
     source.onmessage = (message) => {
+      clearTimeout(stall);
+      setLive(true);
       let event: Event;
       try {
         event = JSON.parse(message.data) as Event;
@@ -87,6 +103,7 @@ export function LiveProgress({ scanId, initialStatus }: { scanId: string; initia
     };
 
     return () => {
+      clearTimeout(stall);
       source.close();
       if (poll) clearInterval(poll);
     };
