@@ -11,11 +11,28 @@ it works, and it is unsafe.
 
 | File | Flaw | Caught by |
 |---|---|---|
-| `src/config.js` | Hardcoded API key and JWT secret committed to source | gitleaks |
-| `src/db.js` | User input concatenated into a SQL string | semgrep |
+| `src/config.js` | Four high-entropy credentials committed to source | gitleaks |
 | `src/server.js` | User input passed to a shell command | semgrep |
-| `src/server.js` | `/admin/users` with no authorization check at all | semgrep / LLM pass |
-| `package.json` | `lodash@4.17.11` — known CVEs | osv-scanner |
+| `package.json` | `node-fetch@2.6.6` — forwards secure headers to untrusted sites | osv-scanner |
+| `src/db.js` | User input concatenated into a SQL string | *not currently matched* |
+| `src/server.js` | `/admin/users` with no authorization check at all | *not currently matched* |
+
+The last two are honest about their status. semgrep's SQL-injection rules are keyed to real database
+drivers, and `src/db.js` requires a made-up `./fake-db`, so nothing matches it. There is likewise no
+generic "route without an authorization check" rule — recognising that is a judgement call, which is
+the gap the LLM pass exists to fill. Claiming they were detected when they are not would be exactly
+the false confidence VibeGuard is built to eliminate.
+
+## Why these dependency versions
+
+`express@5.1.0` is current and clean on purpose. An earlier version of this fixture pinned
+`express@4.18.2`, whose transitive tree dragged in **19 unrelated advisories** — they buried the
+deliberately planted flaws and pinned the score at 0, where fixing anything could no longer move it.
+Even `express@4.21.2` is no longer clean: new advisories have since landed on `path-to-regexp`,
+`qs`, and `body-parser`.
+
+`node-fetch@2.6.6` carries exactly one HIGH advisory, so the dependency signal is real, singular,
+and attributable.
 
 Every credential here is synthetic and has never been valid.
 
