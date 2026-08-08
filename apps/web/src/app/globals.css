@@ -278,6 +278,13 @@ code {
   border-radius: 4px;
 }
 
+.warn-panel {
+  border-color: var(--warn);
+  background: #241c10;
+}
+
+.warn-panel h2 { color: var(--warn); }
+
 .sev-critical { background: #4a1020; color: #ff8fa6; }
 .sev-high     { background: #4a2410; color: #ffb057; }
 .sev-medium   { background: #3d3a12; color: #e8dd6a; }

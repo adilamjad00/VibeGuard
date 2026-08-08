@@ -17,9 +17,13 @@ it works, and it is unsafe.
 | `src/server.js` | `/admin/users` with no authorization check at all | semgrep / LLM pass |
 | `package.json` | `lodash@4.17.11` — known CVEs | osv-scanner |
 
-Every credential here is fake. `sk-proj-1a2b3c4dExampleFAKEkeyDoNotUse00998877665544` is a
-placeholder that has never been a real key, and `supersecret123` is a literal example of what not
-to do.
+Every credential here is synthetic and has never been valid.
+
+They are deliberately shaped to match real credential formats, because secret scanners key on
+structure rather than on the word "key": gitleaks' OpenAI rule requires the literal `T3BlbkFJ`
+marker that real OpenAI keys carry, and its AWS rule requires the `AKIA` prefix followed by exactly
+16 uppercase alphanumerics. A friendly-looking placeholder like `sk-proj-myFakeKey` matches neither
+and is invisible to the scanner — which would make this fixture prove nothing.
 
 The app is never executed during a scan. VibeGuard clones it and reads it as inert text — the whole
 point is that analyzing untrusted code must not mean running it.

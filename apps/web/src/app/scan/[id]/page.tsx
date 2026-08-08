@@ -71,6 +71,7 @@ export default async function ScanPage({ params }: { params: Promise<{ id: strin
   }
 
   const summary = scan.summary ?? { critical: 0, high: 0, medium: 0, low: 0, info: 0 };
+  const failed = scan.summary?.failedScanners ?? [];
 
   return (
     <main>
@@ -80,6 +81,16 @@ export default async function ScanPage({ params }: { params: Promise<{ id: strin
         <code>{scan.repoUrl}</code>
         {scan.commitSha ? ` @ ${scan.commitSha.slice(0, 7)}` : null}
       </p>
+
+      {failed.length > 0 ? (
+        <div className="panel warn-panel">
+          <h2>Partial scan</h2>
+          <p className="finding-body">
+            {failed.join(", ")} did not run, so this score reflects fewer checks than usual. Treat
+            it as a floor, not a clean bill of health.
+          </p>
+        </div>
+      ) : null}
 
       <div className="panel score-panel">
         <div className={`score verdict-${scan.verdict}`}>{scan.score}</div>

@@ -27,6 +27,7 @@ export async function runScan(job: ScanJob): Promise<void> {
 
     await setStatus(scanId, "scanning");
     const findings: NormalizedFinding[] = [];
+    const failedScanners: string[] = [];
     for (const adapter of ADAPTERS) {
       const started = Date.now();
       try {
@@ -35,13 +36,21 @@ export async function runScan(job: ScanJob): Promise<void> {
         console.log(`[scan ${scanId}] ${adapter.name}: ${found.length} findings in ${Date.now() - started}ms`);
       } catch (err) {
         // One broken scanner degrades coverage; it does not fail the scan.
-        // A partial report is worth far more than no report.
+        // A partial report is worth more than no report — but the gap is
+        // recorded and surfaced, never presented as a clean result.
+        failedScanners.push(adapter.name);
         console.error(`[scan ${scanId}] ${adapter.name} failed:`, message(err));
         await recordEvent(scanId, "scanning", `${adapter.name} failed: ${message(err)}`);
       }
     }
 
-    const deduped = dedupe(findings);
+    // If nothing ran, we know nothing. Reporting 100/pass here would be a false
+    // clean bill of health, which is worse than admitting the scan failed.
+    if (failedScanners.length === ADAPTERS.length) {
+      throw new Error(`every scanner failed (${failedScanners.join(", ")})`);
+    }
+
+    const deduped = dedupe(findings.map((f) => relativize(f, repo.path)));
     await persistFindings(scanId, deduped);
 
     // The score is computed from the static findings only, by the pure function
@@ -49,7 +58,7 @@ export async function runScan(job: ScanJob): Promise<void> {
     // Phase 3 — is allowed to move it.
     const score = shipReadinessScore(deduped);
     const verdict = verdictFor(score);
-    const summary = summarize(deduped);
+    const summary = { ...summarize(deduped), failedScanners };
 
     await getPool().query(
       `update scans
@@ -57,7 +66,10 @@ export async function runScan(job: ScanJob): Promise<void> {
         where id = $4`,
       [score, verdict, JSON.stringify(summary), scanId],
     );
-    console.log(`[scan ${scanId}] done: score=${score} verdict=${verdict} findings=${deduped.length}`);
+    console.log(
+      `[scan ${scanId}] done: score=${score} verdict=${verdict} findings=${deduped.length}` +
+        (failedScanners.length ? ` (partial: ${failedScanners.join(", ")} failed)` : ""),
+    );
   } catch (err) {
     // Any unhandled failure must land the scan in `failed` with a reason.
     // A scan stuck in `queued` tells the user nothing and never resolves.
@@ -71,6 +83,28 @@ export async function runScan(job: ScanJob): Promise<void> {
   } finally {
     await cleanup?.();
   }
+}
+
+/**
+ * Scanners report absolute paths inside the throwaway clone directory. Users
+ * need the path within their repository, and leaking `/tmp/vibeguard-XXXX/...`
+ * exposes worker internals for no benefit. Done centrally so every adapter
+ * inherits it rather than each re-implementing the trim.
+ */
+function relativize(finding: NormalizedFinding, repoPath: string): NormalizedFinding {
+  const strip = (value: string) =>
+    value.split(repoPath).join("").replace(/^[/\\]+/, "");
+
+  // The fingerprint is documented as a stable id for dedup and diffing, so it
+  // must not embed the clone directory — that changes on every scan and would
+  // make the same finding look new each time.
+  const fingerprint = finding.fingerprint
+    ? finding.fingerprint.split(repoPath).join("").replace(/:[/\\]+/g, ":")
+    : finding.fingerprint;
+
+  if (!finding.filePath) return { ...finding, fingerprint };
+  const filePath = strip(finding.filePath) || finding.filePath;
+  return { ...finding, filePath, fingerprint };
 }
 
 /** Two scanners can flag the same line; the fingerprint decides identity. */

@@ -36,7 +36,7 @@ export interface Scan {
   status: "queued" | "cloning" | "scanning" | "analyzing" | "done" | "failed";
   score: number | null;
   verdict: "pass" | "review" | "block" | null;
-  summary: Record<Severity, number> | null;
+  summary: (Record<Severity, number> & { failedScanners?: string[] }) | null;
   createdAt: string;
   completedAt: string | null;
   findings: Finding[];
