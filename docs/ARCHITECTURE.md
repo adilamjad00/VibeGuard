@@ -176,6 +176,32 @@ including BullMQ's job data, silently losing queued scans. BullMQ warns about th
 connection. `profileOverrides: maxmemory-policy: noeviction` makes a full queue fail loudly instead
 of quietly dropping work.
 
+Applying that to the *running* service took a detour worth recording. `profileOverrides` in the
+import YAML only applies at service-creation time, and the GUI does not render an Overrides section
+for Valkey on the Hobby profile — which is easy to mistake for "the platform cannot do this."
+
+It can. Zerops' public REST API — the same one `zcli` drives — exposes it directly:
+
+```
+PUT https://api.app-prg1.zerops.io/api/rest/public/service-stack/{id}/autoscaling
+Authorization: Bearer <token>          # zcli's own token, in %APPDATA%\Zerops\cli.data
+{ "autoscalingProfileId": "hobby",
+  "autoscalingProfileOverrides": { "maxmemory-policy": "noeviction" } }
+```
+
+Two things made this safe rather than a gamble. First, `GET` on the same resource beforehand showed
+`autoscalingProfileOverrides: null` and an entirely empty `customAutoscaling`, so the write was
+purely additive — there was no existing setting for a partial `PUT` to clobber. Second, the change
+applies live: the service never left `ACTIVE`, so the queue was never at risk.
+
+The general lesson: **the GUI is a view over the API, not the boundary of it.** When a managed
+platform hides a control, check its OpenAPI spec before concluding the capability is absent or
+reaching for something destructive like recreating the service.
+
+Verified by a two-stage check, because the stages prove different things: re-reading the API proved
+Zerops *stored* the value; restarting the worker and watching BullMQ's connection-time warning drop
+from 6 occurrences to 0 proved the *running server* had actually changed.
+
 **The worker needs `minRam: 1`.** The default vertical-autoscaling floor is 0.12 GB, and the first
 worker container was OOM-killed seconds after reaching `ready`. Node plus the deployed artefact
 does not fit, and semgrep will need considerably more once real scans run. Found only because the
