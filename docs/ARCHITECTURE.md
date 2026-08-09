@@ -50,6 +50,27 @@ one managed service covers two needs instead of adding a second dependency. Queu
 (BullMQ persists them); progress events are fire-and-forget pub/sub, which is correct — a dropped
 progress tick must never corrupt a scan.
 
+### Why Postgres, when two other stores are already in the project
+
+Valkey and object storage are both already here, so a relational database has to earn its place.
+
+It earns it on **shape**. A finding belongs to exactly one scan and is queried by severity within
+that scan; the recent-scans list is an ordered read across scans; the diff needs *the most recent
+earlier completed scan of the same repository*, which is one indexed query
+(`idx_scans_repo on scans(repo_url, commit_sha)`) and an ugly scan-everything in any of the
+alternatives. Scanner-specific payload that does not fit the normalised columns lives in `jsonb`
+alongside it rather than in a second store.
+
+It also earns it on **durability semantics**, which is the part that would bite later. Valkey is
+configured `noeviction` precisely because it holds a queue, and it is deliberately the component
+whose loss is survivable — a Valkey blip degrades the progress animation and nothing else. Putting
+findings there would make the cache-shaped service the system of record. Object storage is the
+opposite problem: it is the right home for the immutable redacted archive and the wrong home for
+anything you need to filter, sort or join.
+
+So each store does the one thing it is good at: **Postgres is the system of record, Valkey is
+transport, S3 is the archive.** No component's failure can silently take a finding with it.
+
 ---
 
 ## Phase 1 — deploy an empty-but-wired skeleton first
@@ -494,3 +515,33 @@ the export and the web report cannot disagree about what counts as a finding, bu
 browser from data the page already holds. No endpoint, no new input reaching the backend, nothing
 added to the archive. PDF was declined: it needs a renderer in the worker for a format nobody pastes
 into a pull request.
+
+---
+
+## Phase 6 — shipping it, and why nothing shipped with it
+
+Phase 6 converts a working product into a submitted one: README, licence, demo, docs, post, form.
+Two decisions are worth recording.
+
+**No code changed.** Features were frozen at the end of Phase 5, and the temptation at this stage is
+always to slip in "one small thing" while writing the README. Nothing in `apps/`, `packages/`,
+`zerops.yaml` or any API contract was touched, so there was nothing to redeploy and no way for
+documentation work to break a verified deployment. The suite stayed at 105/105 and the four builds
+stayed green because they were never at risk — which is the point of freezing.
+
+**The documentation is generated from the running system, not from memory.** Every screenshot and
+the demo GIF come from a real browser-driven scan against the live deployment
+(`244736ab`, 36/BLOCK at +27.5s, zero console errors), and the frames were captured *during* that
+scan rather than staged. Writing the README this way turned up four things that were quietly wrong:
+the README still described the project as "Phase 1 complete", it advertised semgrep rulesets
+(`p/owasp-top-ten`) that had been replaced in Phase 3 by the vendored `security-audit` / `javascript`
+/ `secrets` set, the tracker's own demo script narrated a score of 42 when the product returns 36,
+and this document had never actually justified Postgres. A stale README on a judged submission is a
+correctness bug in the same sense a stale comment is; it just fails in a human's head instead of at
+runtime.
+
+**Kept out of Phase 6 deliberately:** the worker's horizontal autoscaling toggle is still a GUI
+action on the live project, and the demo repository's remediation commit is still unpushed. Both are
+recorded as outstanding rather than quietly done, because the first needs a human in the Zerops
+console and the second is the demo's before/after beat — pushing it early would destroy the opening
+shot.
