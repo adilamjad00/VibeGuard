@@ -446,3 +446,51 @@ jobs, so replicas translate directly into throughput: BullMQ hands each containe
 without a queue backlog. Declared in `zerops-project-import.yml`; applied to the live project through
 the GUI rather than the platform API, after an earlier API write cleared the autoscaling config as a
 side effect of nulls in the payload.
+
+---
+
+## Bonus track — diff, advisory review, export
+
+**The diff needed a second matching pass, because fingerprints carry line numbers.** Scanner
+fingerprints are `gitleaks:file:12:rule` and `semgrep:path:7:check-id`, which is correct for
+de-duplication and wrong for diffing: deleting an import shifts every finding below it, and a
+fingerprint-only diff reports the lot as fixed and immediately re-introduced. So the diff mirrors the
+worker's two-pass dedupe — exact fingerprint, then rule identity without the line, which lands as
+`moved`. Matching is pairwise so two instances of one rule in a file cannot both claim a single
+survivor.
+
+**A diff must know what did not run.** The first deployed version reported `+10 · 1 fixed` on two
+scans of the same commit, because semgrep had crashed on the second one. That is a broken scanner
+rendered as progress — the precise failure mode the partial-scan handling exists to prevent,
+reintroduced by a new feature that had not been taught about it. Findings from a scanner that
+succeeded on one side and failed on the other are now `unknown`, the diff carries
+`comparable: false` and a `coverageGap`, and the UI refuses to colour the delta. The lesson
+generalises: every new surface that summarises a scan has to be told about partial coverage
+separately; it does not inherit the invariant.
+
+**The comparison target is server-chosen.** `GET /scans/:id/diff` finds the previous scan itself
+rather than accepting an id, because a caller-supplied "compare against" parameter would let anyone
+splice two unrelated repositories into a single report. The re-scan button posts through the ordinary
+`POST /scans` for the same reason: the SSRF allowlist and the rate limiter stay on exactly one route,
+and a stored URL gets re-validated rather than trusted because it was accepted once.
+
+**The advisory review adds LLM findings without weakening the LLM-cannot-score invariant.** Static
+analysis is structurally incapable of "this route updates a record and never checks who owns it" —
+the absence of a check has no pattern to match — so a second pass reads whole files for exactly that.
+What keeps it honest is that the score already exists before the pass starts, and that
+`scoredFindings()` filters `source: "llm"` out of `shipReadinessScore` and `summarize`. Ordering is
+the real guarantee; the filter is the one a future caller cannot forget. Advisory output is also
+excluded from the severity breakdown, the finding count and the diff, capped at `medium` severity so
+it can never out-rank a scanner critical, and labelled *advisory · not scored* on screen.
+
+The pass validates its own input twice over. The model is downstream of attacker-controlled text, so
+its response is re-checked before storage: category must be one of four, the line must exist in the
+file, the title must be non-empty. On the demo repo it produced the two things it was built for — a
+missing authorization check no scanner reported, and a report *of* the repository's own
+prompt-injection attempt rather than compliance with it.
+
+**Markdown export is client-side on purpose.** The renderer is a pure function in `packages/core`, so
+the export and the web report cannot disagree about what counts as a finding, but it runs in the
+browser from data the page already holds. No endpoint, no new input reaching the backend, nothing
+added to the archive. PDF was declined: it needs a renderer in the worker for a format nobody pastes
+into a pull request.

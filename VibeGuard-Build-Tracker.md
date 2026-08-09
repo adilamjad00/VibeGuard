@@ -275,16 +275,113 @@ tests: 58/58 (core 24 · api 15 · worker 19)
 
 ---
 
-## 🎁 Bonus track (beyond 100% — do only if ahead; high demo value first)
+## 🎁 Bonus track — 3 of 8 built, 5 declined with reasons
 
-- [ ] **Re-scan diff (before/after)** — apply the 2 fixes → re-scan → score jumps 42→85. *The single strongest demo beat; fit it into Phase 5/6 if you can.*
-- [ ] **AI-antipattern LLM review** — missing authz / prompt-injection surfaces beyond static rules
-- [ ] PDF/Markdown report export (great to attach to the social post)
-- [ ] Live autoscaling demo beat (show a worker replica spin up under load)
-- [ ] Zip upload (non-GitHub code)
-- [ ] Qdrant semantic finding-dedup
-- [ ] Auth + saved scan history
-- [ ] CI/webhook gate mode (`POST` on push → pass/fail)
+| # | Item | Status | Evidence |
+|---|---|---|---|
+| 1 | **Re-scan diff** | ✅ **COMPLETE** | `GET /scans/:id/diff` live; coverage-aware; 16 tests |
+| 2 | **AI-antipattern review** | ✅ **COMPLETE** | 2 advisory findings on the demo repo; score provably unchanged |
+| 3 | **Markdown export** | ✅ **COMPLETE** | 7,686 bytes copied in-browser; 11 tests |
+| 4 | Live autoscaling beat | ⛔ **BLOCKED** | Needs the pending worker GUI toggle; container count is not exposed to the app |
+| 5 | Zip upload | ⬜ **NOT IMPLEMENTED** | Zip bombs and path traversal, on the service whose job is reading hostile input |
+| 6 | Qdrant semantic dedup | ⬜ **NOT IMPLEMENTED** | A 7th service for a problem the two-pass `dedupe()` already solves |
+| 7 | Auth + saved history | ⬜ **NOT IMPLEMENTED** | Large surface, no payoff in a 90-second demo |
+| 8 | CI/webhook gate | ⬜ **NOT IMPLEMENTED** | Needs webhook secret verification and a GitHub App; the honest slice is too thin |
+
+### 1 · Re-scan diff — COMPLETE
+
+`packages/core/src/diff.ts` · `apps/api/src/routes/scans.ts` · `apps/web/src/components/ScanDiff.tsx`
+· `RescanButton.tsx`
+
+Two passes, because scanner fingerprints embed the line number
+(`gitleaks:file:12:rule`): exact fingerprint → `unchanged`, then rule identity
+(`source|category|file|title`) → `moved`. Without the second pass, deleting an import shifts every
+finding below it and the diff reports them all as fixed and re-introduced.
+
+> **A defect the live run caught, not the tests.** The first deployment reported `+10 · 1 fixed` on
+> two scans of the *same commit* — because semgrep had crashed on the second one. A broken scanner
+> presented as progress is the exact failure this product exists to prevent. Findings from a scanner
+> that ran on one side and failed on the other are now `unknown`, the diff is `comparable: false`,
+> and the UI renders the delta in muted grey with a "these two scans are not comparable" notice.
+
+```
+GET /scans/bf9f4073/diff   delta 10  comparable false  coverageGap ["semgrep"]  sameCommit true
+                           fixed 0  introduced 0  unchanged 5  unknown 1
+GET /scans/c1f0a5e4/diff   delta 0   comparable true   sameCommit true
+                           fixed 0  introduced 0  unchanged 6      ← determinism proof
+guards: bad uuid 400 · unknown scan 404 · first scan of a repo 404
+```
+
+The comparison target is chosen server-side (most recent earlier `done` scan of the same
+`repo_url`); a caller-supplied id would let anyone splice two unrelated repositories into one report.
+The re-scan button posts through the ordinary `POST /scans`, so the SSRF allowlist and rate limiter
+stay on one route.
+
+### 2 · AI-antipattern review — COMPLETE
+
+`apps/worker/src/review.ts` · `packages/core/src/score.ts` · `apps/web/src/components/AdvisoryFindings.tsx`
+
+Static analysis matches patterns and is structurally incapable of "this route updates a record and
+never checks who owns it" — the *absence* of a check has no pattern. A second Claude pass reads whole
+files for that gap. Live on the demo repo:
+
+```
+[medium] authz             Admin endpoint exposes user data with no authorization check
+                           src/server.js:11        ← a planted flaw NO scanner reported
+[low]    prompt_injection  Embedded prompt-injection attempt directed at reviewing AI
+                           src/config.js:1         ← it reported the manipulation instead of obeying it
+```
+
+**The score invariant holds, by two independent mechanisms.** Ordering: the score is computed before
+the `analyzing` phase begins. Filter: `scoredFindings()` excludes `source: "llm"` from both
+`shipReadinessScore` and `summarize`, with a test asserting a scanner-only score is byte-identical
+with an advisory finding appended.
+
+```
+score 36 · verdict block · summary {critical:4, high:2}      ← identical to every prior run
+"6 FINDINGS" excludes the advisory pair · severity bar "4 critical, 2 high"
+coverage row reads "2 notes", not "2 found"
+0 llm findings leak into the diff · archive keeps `advisory` as its own key
+0 of the 4 fixture credentials present in the archive
+```
+
+Bounded: ≤4 files, ~6 KB each, ≤6 observations, severity capped at `medium` so it can never
+out-rank a scanner critical, category and line re-validated before storage. Runs under `allSettled`
+alongside enrichment, so it costs no wall-clock time and a failure yields zero advisory findings.
+
+### 3 · Markdown export — COMPLETE
+
+`packages/core/src/markdown.ts` · `apps/web/src/components/MarkdownExport.tsx`
+
+Rendered in the browser from data the page already holds — no endpoint, no new input reaching the
+backend. Makes the same separations the web report does. Verified in a real browser: 7,686 bytes on
+the clipboard with the correct headline, severity table, `## Findings (6)`,
+`## AI review (2) — advisory, not scored`, and none of the fixture credentials. PDF was declined —
+it needs a renderer in the worker for a format nobody pastes into a PR.
+
+### Demo repo
+
+A remediation commit (`0abcef0`) is **prepared and deliberately unpushed** in the scratchpad clone:
+secrets moved to env, `exec` → `execFile` with hostname validation, an authorization check on
+`/admin/users`, `node-fetch` → 2.6.7. `origin/main` is still `01bc96b`, so the 36/BLOCK opening beat
+is intact. Pushing it live during recording produces the before/after diff on camera.
+
+### Bonus-track verification
+
+```
+npm test        105/105   (core 55 · api 15 · worker 19 · web 16)
+npm run build   PASS      all four workspaces
+API             /healthz all green · /scans/:id · /report · /diff · /scans all 200
+security        bad uuid 400 · file:// 400 · 169.254.169.254 400 · SSE sequence intact
+axe             0 WCAG 2.1 A/AA violations across 9 routes
+responsive      no overflow at 1440 / 1280 / 1024 / 768 / 390 / 360
+```
+
+> **Second defect caught by verification.** The advisory pass put a 300-character comment line into a
+> code block, and the report overflowed to 690px at a 390px viewport: grid items default to
+> `min-width: auto`, so the card grew to fit its widest child and the `overflow-x-auto` inside never
+> engaged. `min-w-0` on the cards; the long blocks now scroll in their own boxes (622px of content in
+> a 306px container).
 
 ---
 
