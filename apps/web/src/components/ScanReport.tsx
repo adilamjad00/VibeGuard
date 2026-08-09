@@ -28,12 +28,12 @@ export function ScanReport({ scan }: { scan: Scan }) {
   const copy = VERDICT_COPY[verdict];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       {failedScanners.length > 0 ? <PartialScanBanner failedScanners={failedScanners} /> : null}
 
       {/* ── Verdict + score ─────────────────────────────────────────────── */}
-      <section aria-labelledby="verdict-heading" className="brut border-2 border-line-strong relative p-5 sm:p-7">
-        <div className="flex flex-col items-start gap-7 sm:flex-row sm:items-center">
+      <section aria-labelledby="verdict-heading" className="brut border-2 border-line-strong relative p-6 sm:p-8">
+        <div className="flex flex-col items-start gap-8 sm:flex-row sm:items-center">
           <ScoreGauge score={score} verdict={verdict} />
 
           <div className="min-w-0 flex-1">
@@ -57,7 +57,7 @@ export function ScanReport({ scan }: { scan: Scan }) {
           </div>
         </div>
 
-        <div className="mt-7 grid gap-6 border-t-2 border-line pt-6 lg:grid-cols-2">
+        <div className="mt-8 grid gap-8 border-t-2 border-line pt-6 lg:grid-cols-2">
           <SeverityBreakdown counts={counts} total={scan.findings.length} />
           <ScannerCoverage counts={bySource} failedScanners={failedScanners} />
         </div>
@@ -85,7 +85,7 @@ export function ScanReport({ scan }: { scan: Scan }) {
             </p>
           </div>
         ) : (
-          <ol className="grid gap-3">
+          <ol className="grid gap-4">
             {findings.map((finding, index) => (
               <li key={finding.fingerprint || `${finding.title}-${index}`}>
                 <FindingCard finding={finding} index={index} />

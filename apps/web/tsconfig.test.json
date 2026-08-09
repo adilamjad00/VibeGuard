@@ -1,0 +1,19 @@
+{
+  // Compiles only the framework-free modules under src/lib so their tests can
+  // run under plain `node --test`, matching the pattern the other workspaces
+  // use. Deliberately separate from tsconfig.json, which is noEmit and carries
+  // the Next plugin.
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "skipLibCheck": true,
+    "declaration": false,
+    "outDir": "dist-test",
+    "rootDir": "src/lib",
+    "types": ["node"]
+  },
+  "include": ["src/lib/docs.ts", "src/lib/pipeline.ts", "src/lib/nav.ts", "src/lib/*.test.ts"]
+}

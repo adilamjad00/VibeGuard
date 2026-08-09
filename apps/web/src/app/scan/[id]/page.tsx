@@ -82,6 +82,6 @@ export default async function ScanPage({ params }: { params: Promise<{ id: strin
 
 function Shell({ children }: { children: React.ReactNode }) {
   return (
-    <main className="mx-auto max-w-5xl space-y-6 px-4 py-10 sm:px-6 sm:py-14">{children}</main>
+    <main className="shell section-tight max-w-5xl space-y-8">{children}</main>
   );
 }

@@ -4,7 +4,7 @@ export default function ScanLoading() {
     <main
       aria-busy="true"
       aria-label="Loading scan"
-      className="mx-auto max-w-5xl space-y-6 px-4 py-10 sm:px-6 sm:py-14"
+      className="shell section-tight max-w-5xl space-y-8"
     >
       <div className="space-y-3">
         <div className="skeleton h-3 w-24" />
@@ -12,7 +12,7 @@ export default function ScanLoading() {
         <div className="skeleton h-4 w-56" />
       </div>
 
-      <div className="brut border-2 border-line-strong p-5 sm:p-7">
+      <div className="brut border-2 border-line-strong p-6 sm:p-8">
         <div className="flex flex-col items-start gap-7 sm:flex-row sm:items-center">
           <div className="skeleton h-42 w-42 shrink-0 rounded-full" />
           <div className="w-full flex-1 space-y-3">

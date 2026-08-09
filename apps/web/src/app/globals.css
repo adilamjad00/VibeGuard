@@ -3,20 +3,29 @@
 /* ==========================================================================
    VibeGuard design tokens
    --------------------------------------------------------------------------
-   Dark-only by design: this is an operator tool that gets demoed on a
-   projector, and a single committed palette is easier to keep contrast-safe
-   than two. Every value below is checked against the page background.
+   Dark by default. The marketing pages alternate light and dark bands, but
+   that is one palette re-pointed, not a second design system — see
+   `surface-light` below.
 
    Two colour scales that must never be confused:
      - brand/accents  -> chrome only (nav, CTAs, decorative markers)
      - severity       -> findings only
    The brand orange and `high` amber are adjacent hues, so they are kept in
    separate contexts and severity is *always* accompanied by its text label.
+
+   `--color-ink` and `--color-page` are deliberately different roles that
+   happen to share a value in dark mode:
+     --color-ink   the permanent contrast ink. Text and borders on top of a
+                   bright fill (chips, buttons). Stays dark on every surface.
+     --color-page  the page ground. This is the one that flips on light bands.
+   Collapsing them is what makes a light section look broken — chip labels go
+   white-on-orange and vanish.
    ========================================================================== */
 
 @theme {
   --color-ink: #08080d;
   --color-ink-2: #0c0c13;
+  --color-page: #08080d;
   --color-surface: #101019;
   --color-surface-2: #16161f;
   --color-line: #26263a;
@@ -27,6 +36,10 @@
 
   /* Chrome accents, used categorically like the reference does. */
   --color-brand: #ff6a1f;
+  /* Brand orange is only ~3.0:1 on the light ground, so it fails AA as text
+     there. On light bands the accent is a *fill*; anything that needs to be
+     brand-coloured *text* uses this darker shade (5.4:1). */
+  --color-brand-deep: #c04405;
   --color-cyan: #35c7f2;
   --color-violet: #9b7cff;
   --color-lime: #7de04b;
@@ -50,6 +63,49 @@
   --font-mono: var(--font-mono-jb), ui-monospace, 'SF Mono', Menlo, monospace;
 }
 
+/* Not in @theme: these are plain custom properties rather than utility
+   generators, and they are what `surface-light` re-points. */
+:root {
+  --brut-shadow: #1a1a26;
+  --grid-line: rgb(255 255 255 / 0.022);
+}
+
+/* ==========================================================================
+   Light bands
+   --------------------------------------------------------------------------
+   Every Tailwind colour utility resolves through `var(--color-*)`, so
+   redefining those variables on a wrapper re-themes everything underneath it —
+   `brut` cards, chips, borders, muted text — without touching a single
+   component. Only the ground-level roles are overridden; the accent and
+   severity scales are identical on both surfaces so a chip means the same
+   thing wherever it appears.
+
+   Warm off-white rather than pure white, matching the cream band in the design
+   reference. `--brut-shadow` needs no override: the same near-black reads as a
+   subtle lift on the dark ground and as a hard shadow on the light one.
+   ========================================================================== */
+
+@utility surface-light {
+  --color-page: #f5f4f0;
+  --color-surface: #ffffff;
+  --color-surface-2: #efeee9;
+  --color-line: #d5d3cb;
+  --color-line-strong: #1c1c28;
+  --color-fg: #101019;
+  --color-fg-muted: #5a5a6e;
+  --grid-line: rgb(0 0 0 / 0.035);
+
+  background-color: var(--color-page);
+  color: var(--color-fg);
+  /* Its own grid, since the band's background-color hides the body's. `fixed`
+     keeps the light and dark grids on the same lattice across the page. */
+  background-image:
+    linear-gradient(to right, var(--grid-line) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--grid-line) 1px, transparent 1px);
+  background-size: 48px 48px;
+  background-attachment: fixed;
+}
+
 /* ==========================================================================
    Base
    ========================================================================== */
@@ -59,15 +115,15 @@ html {
 }
 
 body {
-  background-color: var(--color-ink);
+  background-color: var(--color-page);
   color: var(--color-fg);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   /* Faint engineering grid, the reference's dark-section texture. Fixed so it
      reads as a backdrop rather than something that scrolls with content. */
   background-image:
-    linear-gradient(to right, rgb(255 255 255 / 0.022) 1px, transparent 1px),
-    linear-gradient(to bottom, rgb(255 255 255 / 0.022) 1px, transparent 1px);
+    linear-gradient(to right, var(--grid-line) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--grid-line) 1px, transparent 1px);
   background-size: 48px 48px;
   background-attachment: fixed;
 }
@@ -75,6 +131,36 @@ body {
 ::selection {
   background: var(--color-brand);
   color: var(--color-ink);
+}
+
+/* Narrower than default and brand-coloured. Page-level, so it keeps the dark
+   treatment even while a light band is on screen — a scrollbar that changed
+   colour mid-scroll would read as a glitch. */
+html {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-brand) var(--color-ink-2);
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-ink-2);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-brand);
+  border: 2px solid var(--color-ink-2);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #ff8547;
+}
+
+::-webkit-scrollbar-corner {
+  background: var(--color-ink-2);
 }
 
 /* One visible focus treatment everywhere, bright enough to find on a
@@ -114,7 +200,7 @@ body {
    written explicitly at the call site, where Tailwind's own ordering applies
    and a severity colour reliably wins. */
 @utility brut {
-  box-shadow: 4px 4px 0 0 #1a1a26;
+  box-shadow: 4px 4px 0 0 var(--brut-shadow);
   background-color: var(--color-surface);
 }
 
@@ -131,7 +217,7 @@ body {
 
   &:hover {
     transform: translate(-2px, -2px);
-    box-shadow: 6px 6px 0 0 #1a1a26;
+    box-shadow: 6px 6px 0 0 var(--brut-shadow);
     border-color: var(--color-fg-muted);
   }
 }
@@ -232,6 +318,41 @@ body {
   white-space: nowrap;
 }
 
+/* ==========================================================================
+   Layout rhythm
+   --------------------------------------------------------------------------
+   Two utilities instead of per-element margins, so the vertical beat is
+   consistent by construction and a section cannot drift out of step because
+   somebody reached for a one-off `py-`.
+   ========================================================================== */
+
+@utility section {
+  padding-block: 5rem;
+
+  @media (width >= 40rem) {
+    padding-block: 7rem;
+  }
+}
+
+@utility section-tight {
+  padding-block: 3.5rem;
+
+  @media (width >= 40rem) {
+    padding-block: 4.5rem;
+  }
+}
+
+@utility shell {
+  width: 100%;
+  max-width: 72rem;
+  margin-inline: auto;
+  padding-inline: 1rem;
+
+  @media (width >= 40rem) {
+    padding-inline: 1.5rem;
+  }
+}
+
 /* Heavy display heading with the reference's underline stroke. */
 @utility display-heading {
   font-family: var(--font-display);
@@ -275,6 +396,171 @@ body {
 
 @utility live-pulse {
   animation: pulse-dot 1.4s ease-in-out infinite;
+}
+
+/* ==========================================================================
+   Documentation prose
+   --------------------------------------------------------------------------
+   Hand-rolled rather than @tailwindcss/typography: that plugin brings its own
+   opinionated look, which would have to be overridden almost line for line to
+   match this design system. This is smaller than the overrides would have been.
+   ========================================================================== */
+
+@utility prose-vg {
+  color: var(--color-fg-muted);
+  font-size: 0.95rem;
+  line-height: 1.75;
+
+  & h2 {
+    font-family: var(--font-display);
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: -0.01em;
+    font-size: 1.35rem;
+    line-height: 1.2;
+    color: var(--color-fg);
+    margin-block: 3rem 1rem;
+    scroll-margin-top: 7rem;
+  }
+
+  & h3 {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 1.05rem;
+    color: var(--color-fg);
+    margin-block: 2rem 0.75rem;
+    scroll-margin-top: 7rem;
+  }
+
+  & > :first-child {
+    margin-top: 0;
+  }
+
+  & p {
+    margin-block: 1rem;
+  }
+
+  & strong {
+    color: var(--color-fg);
+    font-weight: 600;
+  }
+
+  & a {
+    color: var(--color-fg);
+    text-decoration: underline;
+    text-decoration-color: var(--color-brand);
+    text-underline-offset: 3px;
+    text-decoration-thickness: 2px;
+  }
+
+  & a:hover {
+    color: var(--color-brand);
+  }
+
+  & ul,
+  & ol {
+    margin-block: 1rem;
+    padding-left: 1.25rem;
+    display: grid;
+    gap: 0.5rem;
+  }
+
+  & ul {
+    list-style: none;
+    padding-left: 0;
+  }
+
+  & ul > li {
+    position: relative;
+    padding-left: 1.25rem;
+  }
+
+  /* A small square marker rather than a bullet — the same shape used as the
+     decorative accent everywhere else in the product. */
+  & ul > li::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0.6em;
+    width: 6px;
+    height: 6px;
+    background: var(--color-brand);
+  }
+
+  & ol {
+    list-style: decimal;
+  }
+
+  & ol > li::marker {
+    font-family: var(--font-mono);
+    font-size: 0.85em;
+    color: var(--color-fg-muted);
+  }
+
+  & code {
+    font-family: var(--font-mono);
+    font-size: 0.85em;
+    background: var(--color-surface-2);
+    border: 1px solid var(--color-line);
+    padding: 0.1em 0.35em;
+    color: var(--color-fg);
+  }
+
+  & pre {
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    line-height: 1.65;
+    background: var(--color-ink);
+    border: 2px solid var(--color-line);
+    padding: 1rem;
+    margin-block: 1.5rem;
+    overflow-x: auto;
+    color: var(--color-fg);
+  }
+
+  & pre code {
+    background: none;
+    border: 0;
+    padding: 0;
+    font-size: inherit;
+  }
+
+  & blockquote {
+    border-left: 4px solid var(--color-brand);
+    padding-left: 1rem;
+    margin-block: 1.5rem;
+    color: var(--color-fg);
+  }
+
+  & table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-block: 1.5rem;
+    font-size: 0.85rem;
+  }
+
+  & th,
+  & td {
+    border: 1px solid var(--color-line);
+    padding: 0.5rem 0.75rem;
+    text-align: left;
+    vertical-align: top;
+  }
+
+  & th {
+    font-family: var(--font-display);
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--color-fg);
+    background: var(--color-surface-2);
+  }
+
+  & hr {
+    border: 0;
+    border-top: 2px solid var(--color-line);
+    margin-block: 2.5rem;
+  }
 }
 
 /* Screen-reader-only, plus a skip link that becomes visible on focus. */

@@ -74,7 +74,7 @@ export function RepoInput() {
 
   return (
     <div>
-      <form onSubmit={onSubmit} className="flex flex-col gap-3 sm:flex-row">
+      <form onSubmit={onSubmit} className="flex flex-col gap-4 sm:flex-row">
         <div className="flex-1">
           <label htmlFor={inputId} className="sr-only">
             Public GitHub repository URL

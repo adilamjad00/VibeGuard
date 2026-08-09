@@ -2,15 +2,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { PIPELINE_STEPS, TERMINAL_PHASES, reachedStepIndex, stepState } from "@/lib/pipeline";
 
-/** The phases a user sees, in order. Per-scanner ticks nest under "scanning". */
-const PHASES = [
-  { key: "cloning", label: "Cloning repository", detail: "Shallow clone into a disposable sandbox" },
-  { key: "scanning", label: "Running scanners", detail: "gitleaks · semgrep · osv-scanner" },
-  { key: "analyzing", label: "Explaining findings", detail: "Claude adds why-it-matters and a fix" },
-] as const;
-
-const TERMINAL = new Set(["done", "failed"]);
+const TERMINAL = TERMINAL_PHASES;
 
 /**
  * How long to wait for the first frame before falling back to polling. Replayed
@@ -117,16 +111,26 @@ export function LiveProgress({ scanId, initialStatus }: { scanId: string; initia
     };
   }, [scanId, router]);
 
-  const reachedIndex = indexOf(phase);
+  const reachedIndex = reachedStepIndex(phase);
+  const running = reachedIndex < PIPELINE_STEPS.length;
+  // Per-scanner results, keyed by phase so a replayed event and its live
+  // counterpart collapse into one row rather than appearing twice.
+  const scannerTicks = [
+    ...new Map(
+      log
+        .filter((entry) => entry.phase.startsWith("scanning:") && entry.message)
+        .map((entry) => [entry.phase, { phase: entry.phase, message: entry.message! }]),
+    ).values(),
+  ];
 
   return (
-    <div className="space-y-5">
-      <section aria-labelledby="progress-heading" className="brut border-2 border-line-strong p-5 sm:p-6">
-        <div className="flex flex-wrap items-center gap-2.5">
-          <h2
-            id="progress-heading"
-            className="display-heading text-base text-fg"
-          >
+    <div className="space-y-6">
+      <section
+        aria-labelledby="progress-heading"
+        className="brut border-2 border-line-strong p-6 sm:p-8"
+      >
+        <div className="flex flex-wrap items-center gap-3">
+          <h2 id="progress-heading" className="display-heading text-lg text-fg">
             Scan in progress
           </h2>
           <span className="chip-ghost">
@@ -143,17 +147,16 @@ export function LiveProgress({ scanId, initialStatus }: { scanId: string; initia
             hears each step once as it completes. */}
         <ol
           aria-live="polite"
-          aria-busy={reachedIndex < PHASES.length}
-          className="relative mt-6 ml-2 border-l-2 border-line-strong pl-6"
+          aria-busy={running}
+          className="relative mt-8 ml-2 border-l-2 border-line-strong pl-7"
         >
-          {PHASES.map((step, index) => {
-            const state =
-              reachedIndex > index ? "done" : reachedIndex === index ? "active" : "pending";
+          {PIPELINE_STEPS.map((step, index) => {
+            const state = stepState(index, reachedIndex);
             return (
-              <li key={step.key} className="relative pb-6 last:pb-0">
+              <li key={step.key} className="relative pb-7 last:pb-0">
                 <span
                   aria-hidden
-                  className={`absolute -left-7.75 top-1 h-3.5 w-3.5 border-2 border-ink ${
+                  className={`absolute -left-8.75 top-1 h-3.5 w-3.5 border-2 border-ink ${
                     state === "done"
                       ? "bg-pass"
                       : state === "active"
@@ -173,7 +176,23 @@ export function LiveProgress({ scanId, initialStatus }: { scanId: string; initia
                     {state === "done" ? "done" : state === "active" ? "running…" : "waiting"}
                   </span>
                 </div>
-                <p className="mt-1 text-xs leading-relaxed text-fg-muted">{step.detail}</p>
+                <p className="mt-1.5 text-xs leading-relaxed text-fg-muted">{step.detail}</p>
+
+                {/* Per-scanner ticks belong under the step that produced them
+                    rather than only in the raw activity log. */}
+                {step.key === "scanning" && scannerTicks.length > 0 ? (
+                  <ul className="mt-3 grid gap-1.5">
+                    {scannerTicks.map((tick) => (
+                      <li key={tick.phase} className="flex flex-wrap items-center gap-2">
+                        <span aria-hidden className="h-1.5 w-1.5 shrink-0 bg-cyan" />
+                        <span className="font-mono text-xs text-fg">
+                          {tick.phase.replace("scanning:", "")}
+                        </span>
+                        <span className="font-mono text-xs text-fg-muted">{tick.message}</span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
               </li>
             );
           })}
@@ -181,14 +200,17 @@ export function LiveProgress({ scanId, initialStatus }: { scanId: string; initia
       </section>
 
       {log.length > 0 ? (
-        <section aria-labelledby="activity-heading" className="brut border-2 border-line-strong p-5 sm:p-6">
+        <section
+          aria-labelledby="activity-heading"
+          className="brut border-2 border-line-strong p-6 sm:p-8"
+        >
           <h2
             id="activity-heading"
             className="font-display text-[11px] font-extrabold uppercase tracking-[0.14em] text-fg-muted"
           >
             Activity
           </h2>
-          <ul className="mt-3 grid gap-1.5 font-mono text-xs">
+          <ul className="mt-4 grid gap-2 font-mono text-xs">
             {log.map((entry, index) => (
               <li key={`${entry.phase}-${index}`} className="flex flex-wrap gap-x-3">
                 <span className="text-brand">{entry.phase}</span>
@@ -207,8 +229,8 @@ export function LiveProgress({ scanId, initialStatus }: { scanId: string; initia
 
 function ReportSkeleton() {
   return (
-    <div aria-hidden className="brut border-2 border-line-strong p-5 sm:p-7">
-      <div className="flex flex-col items-start gap-7 sm:flex-row sm:items-center">
+    <div aria-hidden className="brut border-2 border-line-strong p-6 sm:p-8">
+      <div className="flex flex-col items-start gap-8 sm:flex-row sm:items-center">
         <div className="skeleton h-42 w-42 shrink-0 rounded-full" />
         <div className="w-full flex-1 space-y-3">
           <div className="skeleton h-5 w-24" />
@@ -217,18 +239,10 @@ function ReportSkeleton() {
           <div className="skeleton h-4 w-full max-w-sm" />
         </div>
       </div>
-      <div className="mt-7 grid gap-3 border-t-2 border-line pt-6 sm:grid-cols-2">
+      <div className="mt-8 grid gap-3 border-t-2 border-line pt-6 sm:grid-cols-2">
         <div className="skeleton h-10" />
         <div className="skeleton h-10" />
       </div>
     </div>
   );
-}
-
-/** `scanning:semgrep` counts as having reached `scanning`. */
-function indexOf(phase: string): number {
-  if (TERMINAL.has(phase)) return PHASES.length;
-  const base = phase.split(":")[0]!;
-  const found = PHASES.findIndex((p) => p.key === base);
-  return found === -1 ? 0 : found;
 }
