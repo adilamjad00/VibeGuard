@@ -9,10 +9,10 @@ export interface NavItem {
 
 export const PRIMARY_NAV: readonly NavItem[] = [
   { href: "/", label: "Home" },
-  { href: "/scan", label: "Scan", prefix: true },
-  { href: "/docs", label: "Docs", prefix: true },
-  { href: "/pricing", label: "Pricing" },
   { href: "/about", label: "About" },
+  { href: "/pricing", label: "Pricing" },
+  { href: "/docs", label: "Docs", prefix: true },
+  // { href: "/scan", label: "Scan", prefix: true },
 ] as const;
 
 /** Whether a nav item is the one the given pathname is currently under. */
