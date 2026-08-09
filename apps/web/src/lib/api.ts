@@ -1,4 +1,7 @@
 import type { NormalizedFinding, ScanStatus, Severity, Verdict } from "@vibeguard/core";
+import type { ScanDiffPayload } from "@/components/ScanDiff";
+
+export type { ScanDiffPayload };
 
 /** Server-side only: the api service over the project's private network. */
 export const API_INTERNAL_URL = process.env.API_INTERNAL_URL ?? "http://api:3001";
@@ -63,6 +66,26 @@ export async function fetchHealth(): Promise<HealthProbe> {
     return { reachable: true, report: (await res.json()) as HealthReport };
   } catch (err) {
     return { reachable: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/**
+ * Comparison with the previous scan of the same repository.
+ *
+ * Returns null for the common cases — first scan of this repo (404), scan not
+ * finished (409) — and never throws. The diff is an extra band on the report;
+ * it must not be able to take the report itself down.
+ */
+export async function fetchScanDiff(id: string): Promise<ScanDiffPayload | null> {
+  try {
+    const res = await fetch(`${API_INTERNAL_URL}/scans/${id}/diff`, {
+      cache: "no-store",
+      signal: AbortSignal.timeout(8_000),
+    });
+    if (!res.ok) return null;
+    return (await res.json()) as ScanDiffPayload;
+  } catch {
+    return null;
   }
 }
 

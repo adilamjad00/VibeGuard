@@ -19,9 +19,28 @@ const WEIGHTS = { critical: 25, high: 10, medium: 4, low: 1, info: 0 } as const;
 const REPEAT_FACTOR = 0.25;
 const MAX_RULE_MULTIPLIER = 2;
 
+/**
+ * Sources whose findings are advisory: reported, never scored.
+ *
+ * Today that is the LLM antipattern review. The pipeline already computes the
+ * score before that pass runs, so ordering alone makes it impossible for a
+ * model observation to move a verdict — this filter is the second lock on the
+ * same door, and the one a future caller cannot forget to apply.
+ */
+const ADVISORY_SOURCES = new Set(["llm"]);
+
+/** Findings that count toward the score. Scanner output only. */
+export function scoredFindings(findings: NormalizedFinding[]): NormalizedFinding[] {
+  return findings.filter((f) => !ADVISORY_SOURCES.has(f.source));
+}
+
+export function isAdvisory(finding: NormalizedFinding): boolean {
+  return ADVISORY_SOURCES.has(finding.source);
+}
+
 export function summarize(findings: NormalizedFinding[]): ScanSummary {
   const s: ScanSummary = { critical: 0, high: 0, medium: 0, low: 0, info: 0 };
-  for (const f of findings) s[f.severity]++;
+  for (const f of scoredFindings(findings)) s[f.severity]++;
   return s;
 }
 
@@ -51,7 +70,7 @@ function packageOf(title: string): string {
 /** 100 minus damped weighted severity, clamped to [0,100]. Deterministic. */
 export function shipReadinessScore(findings: NormalizedFinding[]): number {
   const counts = new Map<string, number>();
-  for (const f of findings) {
+  for (const f of scoredFindings(findings)) {
     const key = ruleKey(f);
     counts.set(key, (counts.get(key) ?? 0) + 1);
   }

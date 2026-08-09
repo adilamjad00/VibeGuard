@@ -1,6 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { summarize, shipReadinessScore, verdictFor } from "./score.js";
+import {
+  summarize,
+  shipReadinessScore,
+  verdictFor,
+  scoredFindings,
+  isAdvisory,
+} from "./score.js";
 import type { NormalizedFinding, Severity } from "./types.js";
 
 /**
@@ -129,4 +135,81 @@ test("the demo repo profile is off the floor and still blocks", () => {
   const fixed = findings("high", "high", "medium");
   assert.equal(shipReadinessScore(fixed), 76);
   assert.equal(verdictFor(76), "review");
+});
+
+// ── Advisory findings must never reach the score ─────────────────────────────
+
+test("an advisory finding does not change the score", () => {
+  // The AI review writes findings with source "llm". The pipeline computes the
+  // score before that pass runs, so this can only be reached by a future caller
+  // making a mistake — which is exactly why the filter exists.
+  const scanner: NormalizedFinding = {
+    source: "gitleaks",
+    category: "secret",
+    severity: "critical",
+    title: "Hardcoded secret: generic-api-key",
+    fingerprint: "gitleaks:src/config.js:19:generic-api-key",
+  };
+  const advisory: NormalizedFinding = {
+    source: "llm",
+    category: "authz",
+    severity: "medium",
+    title: "No ownership check on the update route",
+    fingerprint: "llm:src/server.js:31:no-ownership-check",
+  };
+
+  const withoutAdvisory = shipReadinessScore([scanner]);
+  const withAdvisory = shipReadinessScore([scanner, advisory]);
+  assert.equal(withAdvisory, withoutAdvisory);
+  assert.equal(withAdvisory, 75);
+});
+
+test("a repository whose only findings are advisory scores 100", () => {
+  const advisory: NormalizedFinding = {
+    source: "llm",
+    category: "prompt_injection",
+    severity: "medium",
+    title: "User input reaches a model prompt unescaped",
+    fingerprint: "llm:src/ai.js:12:prompt-injection",
+  };
+  assert.equal(shipReadinessScore([advisory, advisory, advisory]), 100);
+  assert.equal(verdictFor(shipReadinessScore([advisory])), "pass");
+});
+
+test("summarize counts scanner findings only", () => {
+  const scanner: NormalizedFinding = {
+    source: "semgrep",
+    category: "injection",
+    severity: "high",
+    title: "Detect child process",
+    fingerprint: "semgrep:src/server.js:7:child-process",
+  };
+  const advisory: NormalizedFinding = {
+    source: "llm",
+    category: "authz",
+    severity: "high",
+    title: "Missing authorization",
+    fingerprint: "llm:src/server.js:20:missing-authz",
+  };
+  assert.deepEqual(summarize([scanner, advisory]), {
+    critical: 0,
+    high: 1,
+    medium: 0,
+    low: 0,
+    info: 0,
+  });
+});
+
+test("scoredFindings and isAdvisory agree on what counts", () => {
+  const scanner: NormalizedFinding = {
+    source: "osv",
+    category: "dependency",
+    severity: "high",
+    title: "node-fetch@2.6.6: GHSA-r683-j2x4-v87g",
+    fingerprint: "osv:package-lock.json:node-fetch:GHSA-r683-j2x4-v87g",
+  };
+  const advisory: NormalizedFinding = { ...scanner, source: "llm" };
+  assert.deepEqual(scoredFindings([scanner, advisory]), [scanner]);
+  assert.equal(isAdvisory(advisory), true);
+  assert.equal(isAdvisory(scanner), false);
 });

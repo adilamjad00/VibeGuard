@@ -1,5 +1,7 @@
 import { countBySeverity, countBySource, sortBySeverity } from "@vibeguard/core";
-import type { Scan } from "@/lib/api";
+import type { Scan, ScanDiffPayload } from "@/lib/api";
+import { ScanDiff } from "./ScanDiff";
+import { RescanButton } from "./RescanButton";
 import { VERDICT_CHIP, VERDICT_COPY, VERDICT_TEXT } from "@/lib/ui";
 import { ScoreGauge } from "./ScoreGauge";
 import { SeverityBreakdown } from "./SeverityBreakdown";
@@ -15,7 +17,7 @@ import { SectionHeading } from "./SectionHeading";
  * findings. A judge or a developer should be able to stop reading after the
  * first screen and still have the answer they came for.
  */
-export function ScanReport({ scan }: { scan: Scan }) {
+export function ScanReport({ scan, diff }: { scan: Scan; diff: ScanDiffPayload | null }) {
   const findings = sortBySeverity(scan.findings);
   const counts = countBySeverity(scan.findings);
   const bySource = countBySource(scan.findings);
@@ -63,6 +65,8 @@ export function ScanReport({ scan }: { scan: Scan }) {
         </div>
       </section>
 
+      {diff ? <ScanDiff diff={diff} /> : null}
+
       {/* ── Findings ────────────────────────────────────────────────────── */}
       <section aria-labelledby="findings-heading">
         <SectionHeading
@@ -97,8 +101,11 @@ export function ScanReport({ scan }: { scan: Scan }) {
 
       <div className="flex flex-wrap items-center gap-3 border-t-2 border-line pt-5">
         <ReportDownload scanId={scan.id} />
+        <RescanButton repoUrl={scan.repoUrl} />
         <span className="font-mono text-[11px] text-fg-muted">
-          Archived to private object storage · link expires shortly after signing
+          {diff
+            ? "Re-scanning compares against this run"
+            : "First scan of this repository — re-scan to see a diff"}
         </span>
       </div>
     </div>

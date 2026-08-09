@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { fetchScan, type Scan } from "@/lib/api";
+import { fetchScan, fetchScanDiff, type Scan } from "@/lib/api";
 import { LiveProgress } from "./LiveProgress";
 import { ScanReport } from "@/components/ScanReport";
 import { ScanHeader } from "@/components/ScanHeader";
@@ -72,10 +72,14 @@ export default async function ScanPage({ params }: { params: Promise<{ id: strin
     );
   }
 
+  // Fetched only for a finished scan, and null for the ordinary cases (first
+  // scan of this repo, API hiccup) — the report renders either way.
+  const diff = await fetchScanDiff(scan.id);
+
   return (
     <Shell>
       <ScanHeader scan={scan} />
-      <ScanReport scan={scan} />
+      <ScanReport scan={scan} diff={diff} />
     </Shell>
   );
 }

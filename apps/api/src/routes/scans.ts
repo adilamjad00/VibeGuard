@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import type { NormalizedFinding, ScanStatus, Verdict } from "@vibeguard/core";
+import { diffScans } from "@vibeguard/core";
 import { getPool } from "../db.js";
 import { enqueueScan } from "../queue.js";
 import { validateRepoUrl } from "../repo-url.js";
@@ -119,6 +120,70 @@ export async function scanRoutes(app: FastifyInstance) {
     }
   });
 
+  /**
+   * How this scan compares with the previous scan of the same repository.
+   *
+   * The comparison target is chosen server-side rather than accepted as a
+   * parameter: a caller-supplied "compare against" id would let anyone splice
+   * two unrelated repositories into one report. It is always the most recent
+   * earlier completed scan of the same `repo_url`, found through the existing
+   * `idx_scans_repo` index.
+   *
+   * 404 when there is no earlier scan, so the UI can say "first scan of this
+   * repository" rather than rendering an empty diff.
+   */
+  app.get("/scans/:id/diff", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    if (!isUuid(id)) return reply.code(400).send({ error: "invalid scan id" });
+
+    const current = await loadScanSide(id);
+    if (!current) return reply.code(404).send({ error: "scan not found" });
+    if (current.row.status !== "done") {
+      return reply.code(409).send({ error: "scan has not finished" });
+    }
+
+    const { rows } = await getPool().query<{ id: string }>(
+      `select id from scans
+        where repo_url = $1 and id <> $2 and status = 'done' and created_at < $3
+        order by created_at desc limit 1`,
+      [current.row.repo_url, id, current.row.created_at],
+    );
+    const previousId = rows[0]?.id;
+    if (!previousId) {
+      return reply.code(404).send({ error: "no earlier scan of this repository" });
+    }
+
+    const previous = await loadScanSide(previousId);
+    if (!previous) return reply.code(404).send({ error: "no earlier scan of this repository" });
+
+    const diff = diffScans(
+      {
+        score: previous.row.score ?? 0,
+        verdict: previous.row.verdict ?? "review",
+        commitSha: previous.row.commit_sha,
+        findings: previous.findings,
+        failedScanners: failedScannersOf(previous.row),
+      },
+      {
+        score: current.row.score ?? 0,
+        verdict: current.row.verdict ?? "review",
+        commitSha: current.row.commit_sha,
+        findings: current.findings,
+        failedScanners: failedScannersOf(current.row),
+      },
+    );
+
+    return reply.send({
+      current: { id, commitSha: current.row.commit_sha, createdAt: current.row.created_at },
+      previous: {
+        id: previousId,
+        commitSha: previous.row.commit_sha,
+        createdAt: previous.row.created_at,
+      },
+      ...diff,
+    });
+  });
+
   /** Recent scans, for the landing page. */
   app.get("/scans", async (_req, reply) => {
     const { rows } = await getPool().query<ScanRow>(
@@ -136,6 +201,37 @@ export async function scanRoutes(app: FastifyInstance) {
       })),
     });
   });
+}
+
+/**
+ * Which scanners did not run, from the scan's stored summary.
+ *
+ * `summary` is a jsonb column, so it is parsed defensively — an older row
+ * written before `failedScanners` existed simply reports full coverage, which
+ * is what it had.
+ */
+function failedScannersOf(row: ScanRow): string[] {
+  const summary = row.summary as { failedScanners?: unknown } | null;
+  const failed = summary?.failedScanners;
+  if (!Array.isArray(failed)) return [];
+  return failed.filter((name): name is string => typeof name === "string");
+}
+
+/** A scan row plus its findings, in the shape the diff wants. */
+async function loadScanSide(
+  id: string,
+): Promise<{ row: ScanRow; findings: NormalizedFinding[] } | null> {
+  const scans = await getPool().query<ScanRow>(`select * from scans where id = $1`, [id]);
+  const row = scans.rows[0];
+  if (!row) return null;
+
+  const findings = await getPool().query(
+    `select source, category, severity, title, file_path, line_start, line_end,
+            snippet, explanation, recommended_fix, fingerprint
+       from findings where scan_id = $1`,
+    [id],
+  );
+  return { row, findings: findings.rows.map(toFinding) };
 }
 
 function toFinding(row: Record<string, unknown>): NormalizedFinding {

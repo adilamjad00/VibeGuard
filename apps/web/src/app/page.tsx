@@ -25,9 +25,9 @@ export const dynamic = 'force-dynamic';
  * fills on light, always.
  */
 const STATS = [
-  { value: '3', label: 'Real scanners', accent: 'bg-brand' },
+  { value: '03', label: 'Real scanners', accent: 'bg-brand' },
   { value: '0–100', label: 'Ship readiness score', accent: 'bg-cyan' },
-  { value: '6', label: 'Zerops services', accent: 'bg-lime' },
+  { value: '06', label: 'Zerops services', accent: 'bg-lime' },
   { value: '~30s', label: 'Typical scan', accent: 'bg-violet' },
 ] as const;
 
