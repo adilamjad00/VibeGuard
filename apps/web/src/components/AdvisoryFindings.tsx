@@ -46,7 +46,7 @@ export function AdvisoryFindings({ findings }: { findings: NormalizedFinding[] }
           return (
             <li
               key={finding.fingerprint || `${finding.title}-${index}`}
-              className='brut border-2 border-line-strong border-l-[6px] border-l-violet p-5 sm:p-6'
+              className='brut min-w-0 border-2 border-line-strong border-l-[6px] border-l-violet p-5 sm:p-6'
             >
               <div className='flex flex-wrap items-center gap-2'>
                 <span className='chip bg-violet'>{finding.severity}</span>

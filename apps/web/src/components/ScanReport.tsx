@@ -108,7 +108,7 @@ export function ScanReport({ scan, diff }: { scan: Scan; diff: ScanDiffPayload |
         ) : (
           <ol className="grid gap-4">
             {findings.map((finding, index) => (
-              <li key={finding.fingerprint || `${finding.title}-${index}`}>
+              <li className="min-w-0" key={finding.fingerprint || `${finding.title}-${index}`}>
                 <FindingCard finding={finding} index={index} />
               </li>
             ))}

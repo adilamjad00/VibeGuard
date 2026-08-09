@@ -19,7 +19,7 @@ export function FindingCard({ finding, index }: { finding: NormalizedFinding; in
   return (
     <details
       open={finding.severity === "critical"}
-      className={`brut group border-2 border-line-strong border-l-[6px] ${SEVERITY_BORDER[finding.severity]} [&[open]>summary]:border-b-2 [&[open]>summary]:border-line`}
+      className={`brut group min-w-0 border-2 border-line-strong border-l-[6px] ${SEVERITY_BORDER[finding.severity]} [&[open]>summary]:border-b-2 [&[open]>summary]:border-line`}
     >
       <summary className="flex cursor-pointer list-none items-start gap-3 p-4 marker:hidden [&::-webkit-details-marker]:hidden">
         <span className="mt-0.5 font-mono text-xs tabular-nums text-fg-muted">
