@@ -86,12 +86,22 @@ guarantee: a language model is structurally incapable of moving a VibeGuard verd
 </tr>
 <tr>
 <td width="50%"><img src="docs/media/findings.png" alt="An expanded critical finding with explanation and fix"><br/><sub><b>A finding</b> — redacted snippet, why it matters, a fix you can copy, and the fingerprint.</sub></td>
-<td width="50%"><img src="docs/media/diff.png" alt="Diff against the previous scan of the same repository"><br/><sub><b>Re-scan diff</b> — same commit, same result. Determinism, proven on screen.</sub></td>
+<td width="50%"><img src="docs/media/diff-fixed.png" alt="Diff after the fixes: score 36 to 100, BLOCK to PASS, six findings fixed"><br/><sub><b>After the fix</b> — <code>36 → 100</code>, <code>BLOCK → PASS</code>, six findings fixed. The number moved because the code did.</sub></td>
 </tr>
 <tr>
-<td colspan="2"><img src="docs/media/advisory.png" alt="The advisory AI review section, marked not scored"><br/><sub><b>The advisory pass</b> — an admin route with no authorization check, which <b>no scanner reported</b>. Kept in its own section, capped at medium, and excluded from the score by construction.</sub></td>
+<td width="50%"><img src="docs/media/advisory.png" alt="The advisory AI review section, marked not scored"><br/><sub><b>The advisory pass</b> — an admin route with no authorization check, which <b>no scanner reported</b>. Its own section, capped at medium, excluded from the score by construction.</sub></td>
+<td width="50%"><img src="docs/media/diff.png" alt="Diff between two scans of the same commit showing no change"><br/><sub><b>Determinism</b> — two scans of the same commit, zero difference. A score you cannot reproduce is not a score.</sub></td>
 </tr>
 </table>
+
+The demo repository has since been **remediated**, and the transition above is real: the four
+committed secrets moved to environment variables, `exec` became `execFile` with hostname validation,
+`/admin/users` got an authorization check, and `node-fetch` was bumped. Both scans are on the live
+deployment — the before, and the after.
+
+Worth noting what the advisory pass did on the *fixed* tree: it still returned two notes — an admin
+token compared with `===` rather than in constant time, and the source comments asserting their own
+safety. It does not rubber-stamp a repo just because the scanners went quiet.
 
 ---
 
