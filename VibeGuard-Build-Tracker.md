@@ -1,13 +1,18 @@
 # ✅ VibeGuard — Build Tracker (0 → 100%)
+
 ### The Zerops Challenge · Solo · 48h · Check off as you go
 
 ```
-Progress: [█████████████████░░░]  86%   ·   Phases 1–5 complete → Phase 6 (ship) next
+Progress: [███████████████████░]  95%   ·   Phase 6 build-side done → record, post, SUBMIT
 ```
 
-> **You are here:** Phases 1–5 complete and verified against the live deployment. **FEATURES FROZEN. Next: Phase 6 — demo, README, post, SUBMIT.**
+> **You are here:** Phases 1–5, the bonus track and **the whole build-side of Phase 6** are complete
+> and verified against the live deployment. **FEATURES FROZEN — no code changed in Phase 6.**
+> The last 5% is three things only you can do: **record the video, publish the post, file the form.**
+> Script, Q&A and post drafts are written for you in [`docs/DEMO.md`](docs/DEMO.md).
 >
 > **How to use this tracker**
+>
 > - Tick each box as you finish it. Each phase's boxes ≈ that phase's % band.
 > - **Deploy at the end of every phase and confirm the live URL still works** before moving on (Rule 3 = auto-DQ if it's down at judging).
 > - **Commit after each working step** (proof of in-window work — Rules 7 & 15).
@@ -18,18 +23,19 @@ Progress: [█████████████████░░░]  86%   
 
 ## 📊 Progress map
 
-| Phase | Goal | Band | Cumulative | Status |
-|---|---|---|---|---|
-| **0** | Setup & services | 0→5% | **5%** | ✅ Done |
-| **1** | Empty-but-wired deploy | 5→15% | **15%** | ✅ Done |
-| **2** | Thin end-to-end scan (1 real finding) | 15→35% | 35% | ✅ Done |
-| **3** | All scanners + LLM + score + S3 | 35→60% | **60%** | ✅ Done |
-| **4** | Live progress (Valkey pub/sub → WebSocket) | 60→72% | **72%** | ✅ Done |
-| **5** | Polish + UX + autoscaling | 72→86% | **86%** | ✅ Done |
-| **6** | Demo + README + post + **SUBMIT** | 86→100% | 100% | ⬜ |
-| 🎁 | Bonus (re-scan diff, etc.) | beyond | +bonus | ⬜ |
+| Phase | Goal                                       | Band    | Cumulative | Status  |
+| ----- | ------------------------------------------ | ------- | ---------- | ------- |
+| **0** | Setup & services                           | 0→5%    | **5%**     | ✅ Done |
+| **1** | Empty-but-wired deploy                     | 5→15%   | **15%**    | ✅ Done |
+| **2** | Thin end-to-end scan (1 real finding)      | 15→35%  | 35%        | ✅ Done |
+| **3** | All scanners + LLM + score + S3            | 35→60%  | **60%**    | ✅ Done |
+| **4** | Live progress (Valkey pub/sub → WebSocket) | 60→72%  | **72%**    | ✅ Done |
+| **5** | Polish + UX + autoscaling                  | 72→86%  | **86%**    | ✅ Done |
+| **6** | Demo + README + post + **SUBMIT**          | 86→100% | **95%**    | 🟡 Build-side done · video/post/form are yours |
+| 🎁    | Bonus (re-scan diff, AI review, export)    | beyond  | +bonus     | ✅ 3 of 8 built, 5 declined with reasons |
 
 **Pacing (you're at 15%):**
+
 - **End of Saturday →** Phases 2 + 3 done (~60%): scan → real findings → score → LLM explanations, deployed.
 - **Sunday AM →** Phase 4 (~72%).
 - **Sunday midday →** Phase 5 (~86%), then **FREEZE FEATURES**.
@@ -53,18 +59,20 @@ Progress: [█████████████████░░░]  86%   
 - [x] Worker connects to the BullMQ queue and logs "ready"
 - [x] `schema.sql` migration run against Postgres
 - [x] Public access enabled on `web` + `api`; `NEXT_PUBLIC_API_URL` set
-- [x] Deployed & reachable ✅  ← **deployment risk eliminated**
+- [x] Deployed & reachable ✅ ← **deployment risk eliminated**
 
 ---
 
 ## ✅ Phase 2 — Thin end-to-end scan `(15 → 35%)` — DONE
 
 **API**
+
 - [x] `POST /scans` — validate `repoUrl`, insert `scans` row, enqueue BullMQ job, return `{scanId}`
 - [x] `GET /scans/:id` — return scan + its findings from Postgres
 - [x] IP rate-limit on `POST /scans` — **Valkey-backed** (was in-memory, i.e. per-replica; fixed during audit)
 
 **Worker**
+
 - [x] Consume the `scans` queue job
 - [x] `clone.ts` — shallow `--depth 1` into a temp dir, size cap + timeout, status `cloning`
 - [x] gitleaks adapter → `NormalizedFinding[]`
@@ -74,10 +82,12 @@ Progress: [█████████████████░░░]  86%   
 - [x] try/catch → `status='failed'` with a reason
 
 **Web**
+
 - [x] `/` page — `ScanForm` posts to `POST /scans`, redirects to `/scan/[id]`
 - [x] `/scan/[id]` page — score, verdict, findings list
 
 **Verification evidence (live)**
+
 - Scan of the seed repo returns 4 real gitleaks findings at `src/config.js:19–22`, redacted, with
   repo-relative paths and temp-dir-free fingerprints.
 - SSRF allowlist rejects `http://`, `file://`, `169.254.169.254`, internal `valkey`, embedded
@@ -93,18 +103,21 @@ Progress: [█████████████████░░░]  86%   
 ## ✅ Phase 3 — All scanners + LLM + S3 `(35 → 60%)` — DONE
 
 **Scanners**
+
 - [x] `semgrep` adapter — rulesets **vendored into the image**, not fetched per scan (registry rate-limited; and `p/owasp-top-ten` alone found nothing on the demo repo)
 - [x] `osv` adapter — dependency CVEs, severity from CVSS group score
 - [x] All three run in **parallel** — `Promise.allSettled`, deliberately not `Promise.all`, which would discard good results when one scanner fails
 - [x] Dedup by fingerprint **and** by `(file, line, category)` across scanners
 
 **LLM pass (`llm.ts`)**
+
 - [x] Top N by severity, snippet + small window only, secrets masked before sending
 - [x] **Structured outputs** (`messages.parse` + `zodOutputFormat`) replace the validate/repair loop
 - [x] Failure keeps the static finding with no explanation; unset key is a supported state
 - [x] Score computed **before** the LLM runs, so enrichment cannot move a verdict
 
 **Object storage**
+
 - [x] Normalised **redacted** report to S3 (never raw scanner stdout), `report_object_key` saved
 - [x] `GET /scans/:id/report` → 5-minute presigned URL
 
@@ -179,6 +192,7 @@ the correct sequence; a non-UUID id is rejected before it reaches a channel name
 ## ✅ Phase 5 — Polish + UX + autoscaling `(72 → 86%)` — DONE
 
 **UI (Tailwind v4, dark mode default)**
+
 - [x] `ScoreGauge` — animated SVG arc + counting number, verdict-coloured, Framer Motion, `role="meter"`
 - [x] `SeverityBreakdown` — counts by severity as chips + a proportional bar
 - [x] `FindingCard` — native `<details>`: severity/source/category chips, `file:line`, snippet, explanation, fix, **copy-fix button**
@@ -193,6 +207,7 @@ the correct sequence; a non-UUID id is rejected before it reaches a channel name
 > specified, for the gauge.
 
 **States**
+
 - [x] Empty (no scans yet → prompt back to the one action)
 - [x] Loading skeletons (`loading.tsx` + an inline report skeleton under live progress)
 - [x] Live progress (Phase 4's WebSocket, restyled as the pipeline rail)
@@ -201,14 +216,15 @@ the correct sequence; a non-UUID id is rejected before it reaches a channel name
 - [x] Error (API unreachable → retry; scan failed; 404; `error.tsx` boundary)
 
 **Quality pass**
+
 - [x] Responsive — no horizontal scroll at 1280 / 768 / 390 / 360px, verified in a real browser
 - [x] Accessibility — **axe-core: 0 WCAG 2.1 A/AA violations** on all four live pages
 - [x] Zero console errors/warnings on every page (the 404 page's own document 404 excepted)
 - [~] **Horizontal autoscaling for `worker`** — declared in `zerops-project-import.yml`
-      (`minContainers: 1`, `maxContainers: 3`). **Still to apply on the live project via the GUI:**
-      worker → *Automatic scaling configuration* → containers min 1 / max 3. Not applied through the
-      platform API on purpose: an earlier API write cleared the autoscaling config as a side effect
-      of nulls in the payload.
+  (`minContainers: 1`, `maxContainers: 3`). **Still to apply on the live project via the GUI:**
+  worker → _Automatic scaling configuration_ → containers min 1 / max 3. Not applied through the
+  platform API on purpose: an earlier API write cleared the autoscaling config as a side effect
+  of nulls in the payload.
 - [x] Seed repo re-verified: score 36 / block / `failedScanners: []` / 6 findings, 6 explained
 - [x] Deployed; full click-through driven through the real UI in a headless browser
 
@@ -228,7 +244,7 @@ tests: 58/58 (core 24 · api 15 · worker 19)
 ```
 
 > **Bug caught by verification, not by reading.** The `brut` utility set the CSS `border`
-> shorthand, which Tailwind emitted *after* the generated colour utilities — silently overwriting
+> shorthand, which Tailwind emitted _after_ the generated colour utilities — silently overwriting
 > every `border-critical` / `border-high` / `border-l-*` back to the default line colour. The
 > severity stripe on finding cards and the red/amber tone on the failed and partial banners were
 > all inert. `brut` now carries surface + shadow only and borders are written at the call site.
@@ -238,38 +254,75 @@ tests: 58/58 (core 24 · api 15 · worker 19)
 
 ---
 
-## ⬜ Phase 6 — Ship: demo + README + post + SUBMIT `(86 → 100%)`
-**Goal:** convert a working product into a submitted, prize-eligible entry. **Reserve the last ~3 hours for this — it decides the MacBook *and* the mouse.**
-**Est: ~3h.**
+## 🟡 Phase 6 — Ship: demo + README + post + SUBMIT `(86 → 100%)`
 
-**Demo video (90s — script in PDD §19)**
-- [ ] Record a clean screen capture: hook → paste seed repo → live pipeline → score 42/BLOCK with 2 explained criticals → the "6 services on Zerops" beat → close
+**Goal:** convert a working product into a submitted, prize-eligible entry. **Reserve the last ~3 hours for this — it decides the MacBook _and_ the mouse.**
+
+**Everything that could be built is built. 10 of 19 boxes done; the other 9 need a human** — a
+camera, a social account, and a form. **No code changed in this phase**, so nothing was redeployed
+and nothing could regress.
+
+**Demo video (90s — script now in [`docs/DEMO.md`](docs/DEMO.md), not the PDD)**
+
+- [x] **Script written** — timed shot list with what is on screen and what to say, second by second
+- [ ] Record a clean screen capture: hook → paste demo repo → live pipeline → **36/BLOCK, 4 criticals + 2 highs** → the advisory finding no scanner caught → the "6 services on Zerops" beat → close
 - [ ] No dead air, no "let me just fix this" — re-record until tight
 - [ ] Keep the live product clickable so judges can try it themselves
 
+> ⚠️ **The old bullet here scripted "42/BLOCK with 2 explained criticals". That number was never
+> real.** The product returns **36/BLOCK, 4 critical + 2 high, all six explained, plus 2 advisory
+> notes**. Narrate what is on the screen.
+
 **README (teaching-grade — Kunal rewards this)**
-- [ ] 1-line pitch + **live URL at the top**
-- [ ] 15–20s demo GIF
-- [ ] Mermaid architecture diagram (the 6-service graph)
-- [ ] **"How Zerops is used"** table (the 35% axis, spelled out)
-- [ ] Quickstart + features (Core/Advanced)
-- [ ] **AI tools disclosure** (Claude Code + any others)
-- [ ] "What I learned building on Zerops" (the teaching beat)
-- [ ] MIT license
-- [ ] Screenshots: score, findings, live progress
+
+- [x] 1-line pitch + **live URL at the top**
+- [x] Demo GIF — 16s, 900px, 415 KB, encoded from frames captured **during a real live scan**
+- [x] Mermaid architecture diagram (the 6-service graph, 11 numbered edges) — parsed, not eyeballed
+- [x] **"How Zerops is used"** table — 13 rows, each naming the specific mechanism, not "hosted on Zerops"
+- [x] Quickstart + features (Core/Advanced) + the API surface
+- [x] **AI tools disclosure** — Claude Code (Opus 5), plus the product's own runtime Claude usage
+- [x] "What I learned building on Zerops" — 6 lessons, all from things that actually broke
+- [x] MIT license (`LICENSE`, © 2026 adilamjad00)
+- [x] Screenshots: live progress · score · findings · re-scan diff — all from the live deployment
 
 **Docs & defense**
-- [ ] Finalize `docs/ARCHITECTURE.md` (decisions — why queue+worker, why Postgres, why 6 services)
-- [ ] Rehearse the judge Q&A (PDD §19) until reflexive — esp. "what do you actually detect" and "what's the Zerops-specific part"
+
+- [x] Finalize `docs/ARCHITECTURE.md` — added the missing **why Postgres** decision and a Phase 6 section
+- [x] **Judge Q&A written** — 10 questions answered against the real build ([`docs/DEMO.md`](docs/DEMO.md) §3)
+- [ ] Rehearse it until reflexive — esp. "what do you actually detect" and "what's the Zerops-specific part"
 
 **Social post (whole prize — MX Master 3)**
-- [ ] Publish a build post: project name + what it does + **the demo video** + **live link** + **how Zerops is used** + tag **@WeMakeDevs** and **@zeropsio**
+
+- [x] **Post drafted** — X and LinkedIn variants, both tagging **@WeMakeDevs** and **@zeropsio**
+- [ ] Publish it with the video and the live link attached
 - [ ] (Ideally) you already posted ≥1 progress update earlier for "reach"
 
 **SUBMIT (the non-negotiable)**
+
 - [ ] File the submission form on the event page: **repo + live URL + demo + post link + AI tools disclosed**
 - [ ] **Re-open the live URL after submitting** to confirm it's still up
 - [ ] Keep the deployment warm through judging
+
+**Phase 6 verification (measured, not assumed)**
+
+```
+live scan   244736ab · browser-driven through the real UI · 0 console errors
+            +8.9s RUNNING SCANNERS (LIVE · WEBSOCKET) · +27.5s report 36/BLOCK
+            4 critical gitleaks · 1 high semgrep · 1 high osv · 2 advisory claude
+            diff vs. previous: same commit · 36 → 36 · 6 unchanged   ← determinism, on screen
+tests       105/105  (core 55 · api 15 · worker 19 · web 16)  — unchanged, nothing moved
+build       PASS all four workspaces
+docs        13/13 local links + anchors resolve · mermaid parses · 3/3 external URLs 200
+live URLs   web 200 · api /healthz {db,valkey,s3 all ok} · github repo 200 (public)
+```
+
+**Still outstanding (both need you, neither is code)**
+
+1. **Zerops GUI** — worker → _Automatic scaling configuration_ → containers **min 1 / max 3**.
+   Declared in `zerops-project-import.yml` since Phase 5, never applied to the live project. Not
+   scripted on purpose: an earlier API write cleared the autoscaling config via nulls in the payload.
+2. **Demo repo remediation commit `0abcef0`** — still prepared and unpushed, which is what keeps the
+   opening 36/BLOCK beat. Push it during recording for the before/after.
 
 **Done when:** the form is filed, the live URL is confirmed up, and the post is live. → **100%. 🏆**
 
@@ -277,16 +330,17 @@ tests: 58/58 (core 24 · api 15 · worker 19)
 
 ## 🎁 Bonus track — 3 of 8 built, 5 declined with reasons
 
-| # | Item | Status | Evidence |
-|---|---|---|---|
-| 1 | **Re-scan diff** | ✅ **COMPLETE** | `GET /scans/:id/diff` live; coverage-aware; 16 tests |
-| 2 | **AI-antipattern review** | ✅ **COMPLETE** | 2 advisory findings on the demo repo; score provably unchanged |
-| 3 | **Markdown export** | ✅ **COMPLETE** | 7,686 bytes copied in-browser; 11 tests |
-| 4 | Live autoscaling beat | ⛔ **BLOCKED** | Needs the pending worker GUI toggle; container count is not exposed to the app |
-| 5 | Zip upload | ⬜ **NOT IMPLEMENTED** | Zip bombs and path traversal, on the service whose job is reading hostile input |
-| 6 | Qdrant semantic dedup | ⬜ **NOT IMPLEMENTED** | A 7th service for a problem the two-pass `dedupe()` already solves |
-| 7 | Auth + saved history | ⬜ **NOT IMPLEMENTED** | Large surface, no payoff in a 90-second demo |
-| 8 | CI/webhook gate | ⬜ **NOT IMPLEMENTED** | Needs webhook secret verification and a GitHub App; the honest slice is too thin |
+| #   | Item                                                          | Status                 | Evidence                                                                         |
+| --- | ------------------------------------------------------------- | ---------------------- | -------------------------------------------------------------------------------- |
+| 1   | **Re-scan diff**                                              | ✅ **COMPLETE**        | `GET /scans/:id/diff` live; coverage-aware; 16 tests                             |
+| 2   | **AI-antipattern review**                                     | ✅ **COMPLETE**        | 2 advisory findings on the demo repo; score provably unchanged                   |
+| 3   | **Markdown export**                                           | ✅ **COMPLETE**        | 7,686 bytes copied in-browser; 11 tests                                          |
+| 4   | Live autoscaling beat                                         | ⛔ **BLOCKED**         | Needs the pending worker GUI toggle; container count is not exposed to the app   |
+| 5   | Zip upload                                                    | ⬜ **NOT IMPLEMENTED** | Zip bombs and path traversal, on the service whose job is reading hostile input  |
+| 6   | Qdrant semantic dedup                                         | ⬜ **NOT IMPLEMENTED** | A 7th service for a problem the two-pass `dedupe()` already solves               |
+| 7   | Auth + saved history                                          | ⬜ **NOT IMPLEMENTED** | Large surface, no payoff in a 90-second demo                                     |
+| 8   | CI/webhook gate                                               | ⬜ **NOT IMPLEMENTED** | Needs webhook secret verification and a GitHub App; the honest slice is too thin |
+| 9   | Do not push .claude and Implementation plans Files on GitHub. |
 
 ### 1 · Re-scan diff — COMPLETE
 
@@ -299,7 +353,7 @@ Two passes, because scanner fingerprints embed the line number
 finding below it and the diff reports them all as fixed and re-introduced.
 
 > **A defect the live run caught, not the tests.** The first deployment reported `+10 · 1 fixed` on
-> two scans of the *same commit* — because semgrep had crashed on the second one. A broken scanner
+> two scans of the _same commit_ — because semgrep had crashed on the second one. A broken scanner
 > presented as progress is the exact failure this product exists to prevent. Findings from a scanner
 > that ran on one side and failed on the other are now `unknown`, the diff is `comparable: false`,
 > and the UI renders the delta in muted grey with a "these two scans are not comparable" notice.
@@ -322,7 +376,7 @@ stay on one route.
 `apps/worker/src/review.ts` · `packages/core/src/score.ts` · `apps/web/src/components/AdvisoryFindings.tsx`
 
 Static analysis matches patterns and is structurally incapable of "this route updates a record and
-never checks who owns it" — the *absence* of a check has no pattern. A second Claude pass reads whole
+never checks who owns it" — the _absence_ of a check has no pattern. A second Claude pass reads whole
 files for that gap. Live on the demo repo:
 
 ```
@@ -393,11 +447,12 @@ responsive      no overflow at 1440 / 1280 / 1024 / 768 / 390 / 360
 4. The **90s demo video**
 5. The **submission form filed** before the deadline
 
-*Everything else is negotiable. These five are the difference between "placed" and "didn't count."*
+_Everything else is negotiable. These five are the difference between "placed" and "didn't count."_
 
 ---
 
 ## 🧭 Definition of Done (global)
+
 Deployed on Zerops · reachable live URL through judging · demo flow works end-to-end · README with architecture diagram + AI disclosure · build post published & tagged · submission form filed · every architectural decision explainable.
 
-*— Tick the boxes. Deploy each phase. Keep it live. Reserve the last 3 hours for Phase 6.*
+_— Tick the boxes. Deploy each phase. Keep it live. Reserve the last 3 hours for Phase 6._
