@@ -235,7 +235,7 @@ packages/core     types · Ship Readiness Score · diff · Markdown renderer  (p
 apps/api          Fastify — REST, WebSocket, SSE
 apps/worker       BullMQ consumer, scanner adapters, LLM passes
 apps/web          Next.js 16 App Router
-docs/             ARCHITECTURE.md (decision log) · DEMO.md (script + Q&A)
+docs/             ARCHITECTURE.md — the decision log, including the wrong turns
 ```
 
 ---

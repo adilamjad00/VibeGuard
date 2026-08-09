@@ -11,6 +11,9 @@ dist/
 *.log
 dist-test/
 
+# Local working documents — planning, demo script, editor settings. Useful to
+# keep on disk, not part of what the project publishes.
 .claude/
 VibeGuard-Build-Tracker.md
-VibeGuard-Starter.md
+VibeGuard-Starter-Kit.md
+docs/DEMO.md
