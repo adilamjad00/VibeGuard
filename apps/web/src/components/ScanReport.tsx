@@ -8,6 +8,7 @@ import type { Scan, ScanDiffPayload } from "@/lib/api";
 import { ScanDiff } from "./ScanDiff";
 import { RescanButton } from "./RescanButton";
 import { AdvisoryFindings } from "./AdvisoryFindings";
+import { MarkdownExport } from "./MarkdownExport";
 import { VERDICT_CHIP, VERDICT_COPY, VERDICT_TEXT } from "@/lib/ui";
 import { ScoreGauge } from "./ScoreGauge";
 import { SeverityBreakdown } from "./SeverityBreakdown";
@@ -118,6 +119,18 @@ export function ScanReport({ scan, diff }: { scan: Scan; diff: ScanDiffPayload |
       <AdvisoryFindings findings={advisory} />
 
       <div className="flex flex-wrap items-center gap-3 border-t-2 border-line pt-5">
+        <MarkdownExport
+          report={{
+            repoUrl: scan.repoUrl,
+            commitSha: scan.commitSha,
+            score,
+            verdict,
+            summary: scan.summary,
+            failedScanners,
+            findings: scan.findings,
+            generatedAt: scan.completedAt ?? scan.createdAt,
+          }}
+        />
         <ReportDownload scanId={scan.id} />
         <RescanButton repoUrl={scan.repoUrl} />
         <span className="font-mono text-[11px] text-fg-muted">
