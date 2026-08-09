@@ -152,6 +152,19 @@ export default function Page() {
         in a form you can paste into an editor chat or an issue.
       </p>
 
+      <h3 id="advisory-findings">Advisory findings</h3>
+      <p>
+        Below the findings list you may see an <strong>AI review</strong> section. Those are model
+        observations about weaknesses a pattern cannot express — a route that never checks who is
+        asking, untrusted input reaching a prompt — and they are marked{" "}
+        <em>advisory · not scored</em> because that is exactly what they are.
+      </p>
+      <p>
+        They do not appear in the score, the severity breakdown, the finding count or the re-scan
+        diff. Read them as leads worth checking, not as confirmed findings; unlike a scanner rule they
+        are not reproducible run to run.
+      </p>
+
       <h3 id="false-positives">False positives</h3>
       <p>
         Scanners do not know your intent. A test fixture containing a fake AWS key is a hardcoded

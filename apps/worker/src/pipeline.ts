@@ -6,6 +6,7 @@ import { osvAdapter } from "./adapters/osv.js";
 import { cloneRepo } from "./clone.js";
 import { getPool } from "./db.js";
 import { enrichFindings } from "./llm.js";
+import { reviewForAntipatterns } from "./review.js";
 import { storeReport } from "./storage.js";
 import { publishScanEvent } from "./pubsub.js";
 
@@ -89,9 +90,31 @@ export async function runScan(job: ScanJob): Promise<void> {
     const summary = { ...summarize(deduped), failedScanners };
 
     await setStatus(scanId, "analyzing");
-    const { enriched } = await enrichFindings(deduped, repo.path);
 
-    await persistFindings(scanId, enriched);
+    // Enrichment and the advisory review both read the clone and both call the
+    // model, so they run together: the review costs no extra wall-clock time.
+    // allSettled again — the review is a bonus layer and must never be able to
+    // fail a scan that has already produced a score.
+    const [enrichment, review] = await Promise.allSettled([
+      enrichFindings(deduped, repo.path),
+      reviewForAntipatterns(repo.path, scanId),
+    ]);
+
+    const enriched =
+      enrichment.status === "fulfilled" ? enrichment.value.enriched : deduped;
+    if (enrichment.status === "rejected") {
+      console.error(`[scan ${scanId}] enrichment failed:`, message(enrichment.reason));
+    }
+
+    // Advisory findings are appended *after* the score exists and are filtered
+    // out of scoring by `scoredFindings()` in packages/core. They are stored so
+    // the report can show them, and that is all they do.
+    const advisory = review.status === "fulfilled" ? review.value.advisory : [];
+    if (review.status === "rejected") {
+      console.error(`[scan ${scanId}] advisory review failed:`, message(review.reason));
+    }
+
+    await persistFindings(scanId, [...enriched, ...advisory]);
 
     // Archived after the findings are safely in Postgres, so a storage outage
     // costs the archive and nothing else.
@@ -104,6 +127,7 @@ export async function runScan(job: ScanJob): Promise<void> {
       summary: summarize(deduped),
       failedScanners,
       findings: enriched,
+      advisory,
       generatedAt: new Date().toISOString(),
     });
 

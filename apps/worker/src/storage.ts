@@ -32,6 +32,12 @@ export interface ScanReport {
   summary: ScanSummary;
   failedScanners: string[];
   findings: NormalizedFinding[];
+  /**
+   * AI review observations. Kept in their own field rather than mixed into
+   * `findings` so that anything consuming the archive cannot accidentally count
+   * them toward the score — the same separation the UI makes.
+   */
+  advisory: NormalizedFinding[];
   generatedAt: string;
 }
 

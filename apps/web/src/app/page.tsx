@@ -49,7 +49,7 @@ const CAPABILITIES = [
   },
   {
     title: 'Explains every one of them',
-    body: 'Each finding gets why it matters in this codebase and a concrete fix you can copy. The explanations come after the score, and cannot change it.',
+    body: 'Each finding gets why it matters in this codebase and a concrete fix you can copy — plus a separate advisory review for what a pattern cannot express, like a route that never checks who is asking. All of it comes after the score and none of it can change it.',
     accent: 'bg-violet',
   },
 ] as const;
@@ -260,7 +260,7 @@ export default async function Home() {
           id='scanners-heading'
           eyebrow='Scanner architecture'
           title='What actually runs'
-          subtitle='Not a model guessing at your code. Three industry scanners produce the findings and the score; the LLM only explains what they found.'
+          subtitle='Three industry scanners produce every finding that counts, and the score comes from them alone. Claude explains what they found, and adds a separate advisory review for the things a pattern cannot express — clearly marked, never scored.'
         />
 
         <ul className='grid gap-5 sm:grid-cols-2'>

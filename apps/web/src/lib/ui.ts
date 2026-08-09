@@ -89,7 +89,7 @@ export const SOURCE_META: Record<FindingSource, { label: string; role: string; a
   },
   llm: {
     label: "claude",
-    role: "Explanation only — turns each finding into why it matters and how to fix it. Never invents findings.",
+    role: "Explains every scanner finding, and separately reviews source files for weaknesses a pattern cannot express — missing authorization, prompt-injection surfaces. Those notes are advisory and never scored.",
     accent: "bg-violet",
   },
 };

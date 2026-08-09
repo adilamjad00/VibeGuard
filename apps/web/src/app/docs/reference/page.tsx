@@ -61,10 +61,11 @@ export default function Page() {
               <strong>Claude</strong>
             </td>
             <td>
-              Not a scanner. Explains each finding and proposes a fix. Cannot create, remove or re-rank
-              findings, and cannot change the score.
+              Not a scanner. Explains each scanner finding and proposes a fix, and separately reviews
+              source files for missing authorization and prompt-injection surfaces. Cannot remove or
+              re-rank a scanner finding, and cannot change the score.
             </td>
-            <td>enrichment</td>
+            <td>enrichment + advisory</td>
           </tr>
         </tbody>
       </table>
@@ -120,9 +121,24 @@ export default function Page() {
       <h3 id="faq-ai-findings">Does the AI decide the score?</h3>
       <p>
         No, and it structurally cannot. The score is computed by a pure function from scanner output
-        before the model is called. The model only writes the explanation and the fix. A repository
-        cannot argue its way to a better number — including by putting instructions in its own source,
-        which the demo repository does.
+        before the model is called at all. A repository cannot argue its way to a better number —
+        including by putting instructions in its own source, which the demo repository does.
+      </p>
+      <p>
+        The model does two things after that: it writes the explanation and fix on each scanner
+        finding, and it produces the <strong>AI review</strong> — advisory observations about missing
+        authorization and prompt-injection surfaces. Those appear in their own section, are labelled
+        <em> advisory · not scored</em>, and are filtered out of the score, the severity breakdown and
+        the re-scan diff. See{" "}
+        <Link href="/docs/how-it-works#advisory-review">advisory review</Link>.
+      </p>
+
+      <h3 id="faq-advisory">Why is the AI review separate from the findings?</h3>
+      <p>
+        Because it is a weaker kind of evidence and the interface should say so. A scanner finding is
+        reproducible — the same rule on the same code gives the same answer every time. A model
+        observation is a judgement that may differ between runs, and it can be wrong in ways a rule
+        cannot. Mixing the two would make the whole list as soft as its softest member.
       </p>
 
       <h3 id="faq-false-positive">A finding is a false positive. Can I dismiss it?</h3>

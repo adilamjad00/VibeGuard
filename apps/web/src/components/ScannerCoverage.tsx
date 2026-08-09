@@ -12,9 +12,12 @@ import { SOURCE_META, SOURCE_ORDER } from "@/lib/ui";
 export function ScannerCoverage({
   counts,
   failedScanners,
+  advisoryCount = 0,
 }: {
   counts: Partial<Record<FindingSource, number>>;
   failedScanners: string[];
+  /** AI review observations. Counted separately — they are not scanner output. */
+  advisoryCount?: number;
 }) {
   const failed = new Set(failedScanners);
 
@@ -41,7 +44,17 @@ export function ScannerCoverage({
                   didFail ? "text-block" : "text-fg-muted"
                 }`}
               >
-                {didFail ? "failed" : count === 0 ? "0 findings" : `${count} found`}
+                {didFail
+                  ? "failed"
+                  : source === "llm"
+                    ? // Claude does not produce scanner findings, so its row
+                      // counts advisory observations and says so.
+                      advisoryCount === 0
+                      ? "0 notes"
+                      : `${advisoryCount} note${advisoryCount === 1 ? "" : "s"}`
+                    : count === 0
+                      ? "0 findings"
+                      : `${count} found`}
               </span>
             </li>
           );

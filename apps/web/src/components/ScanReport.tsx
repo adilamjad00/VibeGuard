@@ -1,7 +1,13 @@
-import { countBySeverity, countBySource, sortBySeverity } from "@vibeguard/core";
+import {
+  countBySeverity,
+  countBySource,
+  isAdvisory,
+  sortBySeverity,
+} from "@vibeguard/core";
 import type { Scan, ScanDiffPayload } from "@/lib/api";
 import { ScanDiff } from "./ScanDiff";
 import { RescanButton } from "./RescanButton";
+import { AdvisoryFindings } from "./AdvisoryFindings";
 import { VERDICT_CHIP, VERDICT_COPY, VERDICT_TEXT } from "@/lib/ui";
 import { ScoreGauge } from "./ScoreGauge";
 import { SeverityBreakdown } from "./SeverityBreakdown";
@@ -18,9 +24,15 @@ import { SectionHeading } from "./SectionHeading";
  * first screen and still have the answer they came for.
  */
 export function ScanReport({ scan, diff }: { scan: Scan; diff: ScanDiffPayload | null }) {
-  const findings = sortBySeverity(scan.findings);
-  const counts = countBySeverity(scan.findings);
-  const bySource = countBySource(scan.findings);
+  // The score, the breakdown and the findings list are scanner output only.
+  // Advisory observations are shown, but in their own section and never mixed
+  // into the numbers the verdict is built from.
+  const scanner = scan.findings.filter((f) => !isAdvisory(f));
+  const advisory = sortBySeverity(scan.findings.filter(isAdvisory));
+
+  const findings = sortBySeverity(scanner);
+  const counts = countBySeverity(scanner);
+  const bySource = countBySource(scanner);
   const failedScanners = scan.summary?.failedScanners ?? [];
 
   // A scan can only reach `done` with a score and verdict, but the column is
@@ -60,8 +72,12 @@ export function ScanReport({ scan, diff }: { scan: Scan; diff: ScanDiffPayload |
         </div>
 
         <div className="mt-8 grid gap-8 border-t-2 border-line pt-6 lg:grid-cols-2">
-          <SeverityBreakdown counts={counts} total={scan.findings.length} />
-          <ScannerCoverage counts={bySource} failedScanners={failedScanners} />
+          <SeverityBreakdown counts={counts} total={scanner.length} />
+          <ScannerCoverage
+            counts={bySource}
+            failedScanners={failedScanners}
+            advisoryCount={advisory.length}
+          />
         </div>
       </section>
 
@@ -98,6 +114,8 @@ export function ScanReport({ scan, diff }: { scan: Scan; diff: ScanDiffPayload |
           </ol>
         )}
       </section>
+
+      <AdvisoryFindings findings={advisory} />
 
       <div className="flex flex-wrap items-center gap-3 border-t-2 border-line pt-5">
         <ReportDownload scanId={scan.id} />

@@ -169,9 +169,14 @@ browser  ◀── api ◀── valkey   (WebSocket, live progress)`}</code>
 
       <h2 id="ai-analysis">AI analysis</h2>
       <p>
-        Once the score exists, the most severe findings are sent to Claude with the surrounding code
-        snippet. For each one the model returns two things: why it matters in this specific codebase,
-        and a concrete fix.
+        Once the score exists, Claude runs two passes concurrently. Neither can change the number,
+        because the number already exists by the time either starts.
+      </p>
+
+      <h3 id="explanation-pass">Explanation</h3>
+      <p>
+        The most severe findings are sent with the surrounding code snippet. For each one the model
+        returns two things: why it matters in this specific codebase, and a concrete fix.
       </p>
       <p>Three constraints on that step:</p>
       <ul>
@@ -192,6 +197,47 @@ browser  ◀── api ◀── valkey   (WebSocket, live progress)`}</code>
       <p>
         If the model call fails or times out, the findings are stored without explanations. Degrading
         to an unexplained finding is correct; dropping the finding would not be.
+      </p>
+
+      <h3 id="advisory-review">Advisory review</h3>
+      <p>
+        Static analysis matches patterns. It is very good at &quot;this string is concatenated into a
+        shell command&quot; and structurally incapable of &quot;this route updates a record by id and
+        never checks who owns it&quot; — the <em>absence</em> of a check has no pattern to match. The
+        second pass reads whole source files looking for exactly that gap: missing or incomplete
+        authorization, and untrusted input reaching a model prompt.
+      </p>
+      <p>
+        <strong>Everything it produces is advisory and none of it is scored.</strong> Two independent
+        mechanisms enforce that. The score is computed before this pass begins, so ordering alone
+        makes it impossible for an observation to move a verdict; and{" "}
+        <code>scoredFindings()</code> in the scoring module filters <code>source: &quot;llm&quot;</code>{" "}
+        out of both the score and the severity breakdown, so a future caller cannot reintroduce them
+        by mistake.
+      </p>
+      <p>Bounded and validated, because the model is downstream of attacker-controlled text:</p>
+      <ul>
+        <li>
+          At most four files per scan, ~6 KB each, at most six observations — an unbounded review of a
+          large repository is a cost incident.
+        </li>
+        <li>
+          Severity is <strong>capped at medium</strong>. A model observation must never out-rank a
+          scanner critical in a list sorted worst-first.
+        </li>
+        <li>
+          Every observation is re-checked before it is stored: the category must be one of the four
+          allowed, the line must exist in the file, the title must be non-empty. Anything else is
+          dropped.
+        </li>
+        <li>
+          Excluded from the re-scan diff. Model output is not reproducible, so including it would
+          manufacture phantom fixes and regressions on every re-scan.
+        </li>
+      </ul>
+      <p>
+        The pass shares the scan's LLM budget and runs alongside the explanation pass, so it costs no
+        extra wall-clock time. If it fails, you get zero advisory findings and a complete report.
       </p>
 
       <h2 id="report-generation">Report generation</h2>
